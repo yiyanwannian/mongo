@@ -1,0 +1,232 @@
+@startuml MongoDB Architecture
+!theme plain
+title MongoDB 分布式架构图
+
+' 定义样式
+skinparam component {
+    BackgroundColor LightBlue
+    BorderColor DarkBlue
+}
+
+skinparam database {
+    BackgroundColor LightGreen
+    BorderColor DarkGreen
+}
+
+skinparam node {
+    BackgroundColor LightYellow
+    BorderColor Orange
+}
+
+' 客户端层
+package "客户端层" {
+    [应用程序] as App
+    [MongoDB Shell] as Shell
+    [驱动程序] as Driver
+}
+
+' 路由层
+package "路由层 (mongos)" {
+    component "mongos-1" as mongos1
+    component "mongos-2" as mongos2
+    component "mongos-3" as mongos3
+    
+    package "路由组件" {
+        [查询路由器] as QueryRouter
+        [分片目标选择器] as ShardTargeter
+        [负载均衡器] as LoadBalancer
+    }
+}
+
+' 配置服务器
+package "配置服务器集群" {
+    database "Config Server 1" as CS1
+    database "Config Server 2" as CS2  
+    database "Config Server 3" as CS3
+    
+    package "配置数据" {
+        [分片元数据] as ShardMeta
+        [集合分片信息] as CollectionMeta
+        [块分布信息] as ChunkMeta
+    }
+}
+
+' 分片集群
+package "分片集群" {
+    package "分片1 (复制集)" {
+        node "Primary 1" as P1 {
+            component "mongod" as mongod1
+            database "WiredTiger" as WT1
+        }
+        node "Secondary 1-1" as S11 {
+            component "mongod" as mongod11
+            database "WiredTiger" as WT11
+        }
+        node "Secondary 1-2" as S12 {
+            component "mongod" as mongod12
+            database "WiredTiger" as WT12
+        }
+    }
+    
+    package "分片2 (复制集)" {
+        node "Primary 2" as P2 {
+            component "mongod" as mongod2
+            database "WiredTiger" as WT2
+        }
+        node "Secondary 2-1" as S21 {
+            component "mongod" as mongod21
+            database "WiredTiger" as WT21
+        }
+        node "Secondary 2-2" as S22 {
+            component "mongod" as mongod22
+            database "WiredTiger" as WT22
+        }
+    }
+    
+    package "分片3 (复制集)" {
+        node "Primary 3" as P3 {
+            component "mongod" as mongod3
+            database "WiredTiger" as WT3
+        }
+        node "Secondary 3-1" as S31 {
+            component "mongod" as mongod31
+            database "WiredTiger" as WT31
+        }
+        node "Secondary 3-2" as S32 {
+            component "mongod" as mongod32
+            database "WiredTiger" as WT32
+        }
+    }
+}
+
+' mongod内部架构
+package "mongod 内部架构" {
+    package "网络层" {
+        [传输层] as Transport
+        [连接管理] as ConnMgr
+    }
+    
+    package "查询处理" {
+        [查询解析器] as QueryParser
+        [查询规划器] as QueryPlanner
+        [查询执行引擎] as QueryEngine
+        [聚合框架] as AggFramework
+    }
+    
+    package "存储层" {
+        [存储引擎接口] as StorageInterface
+        [索引管理] as IndexMgr
+        [事务管理] as TxnMgr
+    }
+    
+    package "复制层" {
+        [Oplog管理] as OplogMgr
+        [复制协调器] as ReplCoord
+        [选举管理] as ElectionMgr
+    }
+    
+    package "分片层" {
+        [分片状态] as ShardingState
+        [块管理] as ChunkMgr
+        [迁移管理] as MigrationMgr
+    }
+}
+
+' 连接关系
+App --> Driver
+Shell --> Driver
+Driver --> mongos1
+Driver --> mongos2
+Driver --> mongos3
+
+mongos1 --> QueryRouter
+mongos2 --> QueryRouter
+mongos3 --> QueryRouter
+
+QueryRouter --> ShardTargeter
+ShardTargeter --> LoadBalancer
+
+mongos1 --> CS1
+mongos1 --> CS2
+mongos1 --> CS3
+
+mongos1 --> P1
+mongos1 --> P2
+mongos1 --> P3
+
+' 配置服务器复制
+CS1 <--> CS2 : 复制
+CS2 <--> CS3 : 复制
+CS3 <--> CS1 : 复制
+
+' 分片内复制
+P1 --> S11 : 复制
+P1 --> S12 : 复制
+S11 --> P1 : 心跳
+S12 --> P1 : 心跳
+
+P2 --> S21 : 复制
+P2 --> S22 : 复制
+S21 --> P2 : 心跳
+S22 --> P2 : 心跳
+
+P3 --> S31 : 复制
+P3 --> S32 : 复制
+S31 --> P3 : 心跳
+S32 --> P3 : 心跳
+
+' 存储引擎连接
+mongod1 --> WT1
+mongod11 --> WT11
+mongod12 --> WT12
+mongod2 --> WT2
+mongod21 --> WT21
+mongod22 --> WT22
+mongod3 --> WT3
+mongod31 --> WT31
+mongod32 --> WT32
+
+' mongod内部连接
+Transport --> QueryParser
+QueryParser --> QueryPlanner
+QueryPlanner --> QueryEngine
+QueryEngine --> StorageInterface
+StorageInterface --> IndexMgr
+StorageInterface --> TxnMgr
+
+QueryEngine --> AggFramework
+QueryEngine --> ReplCoord
+ReplCoord --> OplogMgr
+ReplCoord --> ElectionMgr
+
+StorageInterface --> ShardingState
+ShardingState --> ChunkMgr
+ChunkMgr --> MigrationMgr
+
+note right of mongos1
+  mongos是无状态的路由器
+  可以水平扩展多个实例
+  负责查询路由和负载均衡
+end note
+
+note right of CS1
+  配置服务器存储集群元数据
+  必须部署为复制集
+  存储分片和块的映射信息
+end note
+
+note right of P1
+  每个分片都是一个复制集
+  提供高可用性和数据冗余
+  支持读写分离
+end note
+
+note bottom of WT1
+  WiredTiger提供:
+  - 文档级并发控制
+  - 数据压缩
+  - 事务支持
+  - 检查点机制
+end note
+
+@enduml

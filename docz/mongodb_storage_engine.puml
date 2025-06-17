@@ -1,0 +1,190 @@
+@startuml MongoDB Storage Engine Architecture
+!theme plain
+title MongoDB 存储引擎架构
+
+' 定义样式
+skinparam component {
+    BackgroundColor LightBlue
+    BorderColor DarkBlue
+}
+
+skinparam database {
+    BackgroundColor LightGreen
+    BorderColor DarkGreen
+}
+
+skinparam package {
+    BackgroundColor LightYellow
+    BorderColor Orange
+}
+
+' MongoDB应用层
+package "MongoDB 应用层" {
+    [查询执行器] as QueryExecutor
+    [聚合管道] as AggPipeline
+    [索引管理器] as IndexManager
+    [事务协调器] as TxnCoordinator
+}
+
+' 存储引擎抽象层
+package "存储引擎抽象层" {
+    interface "存储引擎接口" as StorageEngineInterface
+    interface "记录存储接口" as RecordStoreInterface
+    interface "排序数据接口" as SortedDataInterface
+    
+    [存储引擎工厂] as StorageEngineFactory
+    [恢复单元] as RecoveryUnit
+    [快照管理器] as SnapshotManager
+}
+
+' WiredTiger存储引擎
+package "WiredTiger 存储引擎" {
+    [WiredTiger引擎] as WTEngine
+    [WiredTiger记录存储] as WTRecordStore
+    [WiredTiger索引] as WTIndex
+    [WiredTiger恢复单元] as WTRecoveryUnit
+    [WiredTiger快照管理器] as WTSnapshotManager
+    
+    package "WiredTiger核心" {
+        [会话管理] as SessionMgr
+        [事务管理] as TxnMgr
+        [缓存管理] as CacheMgr
+        [检查点管理] as CheckpointMgr
+        [日志管理] as LogMgr
+        [块管理器] as BlockMgr
+    }
+}
+
+' 物理存储层
+package "物理存储层" {
+    database "数据文件\n(.wt)" as DataFiles
+    database "索引文件\n(.wt)" as IndexFiles
+    database "事务日志\n(WiredTigerLog.*)" as TxnLog
+    database "元数据文件\n(WiredTiger.wt)" as MetadataFile
+    database "检查点文件\n(WiredTigerCheckpoint.*)" as CheckpointFiles
+}
+
+' 内存结构
+package "内存结构" {
+    [页面缓存] as PageCache
+    [事务缓冲区] as TxnBuffer
+    [索引缓存] as IndexCache
+    [元数据缓存] as MetadataCache
+}
+
+' 连接关系
+QueryExecutor --> StorageEngineInterface
+AggPipeline --> StorageEngineInterface
+IndexManager --> SortedDataInterface
+TxnCoordinator --> RecoveryUnit
+
+StorageEngineInterface <|-- WTEngine
+RecordStoreInterface <|-- WTRecordStore
+SortedDataInterface <|-- WTIndex
+RecoveryUnit <|-- WTRecoveryUnit
+SnapshotManager <|-- WTSnapshotManager
+
+StorageEngineFactory --> WTEngine
+
+WTEngine --> SessionMgr
+WTRecordStore --> SessionMgr
+WTIndex --> SessionMgr
+WTRecoveryUnit --> TxnMgr
+
+SessionMgr --> CacheMgr
+SessionMgr --> TxnMgr
+TxnMgr --> LogMgr
+CacheMgr --> PageCache
+CheckpointMgr --> CheckpointFiles
+LogMgr --> TxnLog
+BlockMgr --> DataFiles
+BlockMgr --> IndexFiles
+
+WTEngine --> MetadataFile
+WTRecordStore --> DataFiles
+WTIndex --> IndexFiles
+
+CacheMgr --> PageCache
+CacheMgr --> IndexCache
+CacheMgr --> MetadataCache
+TxnMgr --> TxnBuffer
+
+' 数据流
+note right of QueryExecutor
+  查询执行器通过存储引擎接口
+  访问底层数据，支持多种
+  查询类型和优化策略
+end note
+
+note right of WTEngine
+  WiredTiger引擎特性:
+  - 文档级并发控制
+  - MVCC多版本控制
+  - 压缩存储
+  - 事务支持
+  - 检查点恢复
+end note
+
+note bottom of PageCache
+  内存管理:
+  - LRU页面置换
+  - 压缩页面缓存
+  - 脏页面写回
+  - 内存使用限制
+end note
+
+note bottom of DataFiles
+  存储文件:
+  - B+树结构
+  - 块压缩
+  - 增量备份支持
+  - 文件级加密
+end note
+
+' 存储引擎操作流程
+package "存储操作流程" {
+    note as ReadFlow
+        读操作流程:
+        1. 查询请求
+        2. 检查缓存
+        3. 读取磁盘
+        4. 解压数据
+        5. 返回结果
+    end note
+
+    note as WriteFlow
+        写操作流程:
+        1. 写入请求
+        2. 事务开始
+        3. 写入缓存
+        4. 记录日志
+        5. 事务提交
+        6. 异步刷盘
+    end note
+
+    note as CheckpointFlow
+        检查点流程:
+        1. 触发检查点
+        2. 冻结脏页
+        3. 写入磁盘
+        4. 更新元数据
+        5. 清理日志
+    end note
+}
+
+' 性能优化特性
+package "性能优化特性" {
+    [预读机制] as Prefetch
+    [写入批处理] as WriteBatching
+    [压缩算法] as Compression
+    [布隆过滤器] as BloomFilter
+    [统计信息] as Statistics
+}
+
+CacheMgr --> Prefetch
+TxnMgr --> WriteBatching
+BlockMgr --> Compression
+WTIndex --> BloomFilter
+WTEngine --> Statistics
+
+@enduml

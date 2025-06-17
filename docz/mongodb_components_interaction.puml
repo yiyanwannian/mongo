@@ -1,0 +1,210 @@
+@startuml MongoDB Components Interaction
+!theme plain
+title MongoDB 组件交互序列图
+
+actor Client as C
+participant "mongos\n(路由器)" as MS
+participant "Config Server\n(配置服务器)" as CS
+participant "Primary Shard\n(主分片)" as PS
+participant "Secondary Shard\n(从分片)" as SS
+participant "WiredTiger\n(存储引擎)" as WT
+
+== 查询处理流程 ==
+
+C -> MS: 发送查询请求
+activate MS
+
+MS -> CS: 获取集合分片信息
+activate CS
+CS --> MS: 返回分片元数据
+deactivate CS
+
+MS -> MS: 分析查询条件\n确定目标分片
+
+alt 单分片查询
+    MS -> PS: 转发查询到目标分片
+    activate PS
+    PS -> WT: 执行存储层查询
+    activate WT
+    WT --> PS: 返回查询结果
+    deactivate WT
+    PS --> MS: 返回结果
+    deactivate PS
+    MS --> C: 返回最终结果
+else 多分片查询
+    note over MS: 并行查询多个分片
+
+    MS -> PS: 查询分片1
+    activate PS
+    PS -> WT: 存储层查询
+    activate WT
+    WT --> PS: 返回结果
+    deactivate WT
+    PS --> MS: 返回分片1结果
+    deactivate PS
+
+    MS -> SS: 查询分片2
+    activate SS
+    SS -> WT: 存储层查询
+    activate WT
+    WT --> SS: 返回结果
+    deactivate WT
+    SS --> MS: 返回分片2结果
+    deactivate SS
+
+    MS -> MS: 合并查询结果
+    MS --> C: 返回最终结果
+end
+
+deactivate MS
+
+== 写入操作流程 ==
+
+C -> MS: 发送写入请求
+activate MS
+
+MS -> CS: 获取分片信息
+activate CS
+CS --> MS: 返回目标分片信息
+deactivate CS
+
+MS -> PS: 转发写入到目标分片
+activate PS
+
+PS -> PS: 验证分片版本
+PS -> WT: 执行写入操作
+activate WT
+
+note right of WT: 写入数据到存储\n更新索引\n记录事务日志
+
+WT --> PS: 写入完成确认
+deactivate WT
+
+PS -> PS: 记录到Oplog
+PS -> SS: 复制Oplog到从节点
+activate SS
+SS -> WT: 应用Oplog条目
+activate WT
+WT --> SS: 应用完成
+deactivate WT
+SS --> PS: 复制确认
+deactivate SS
+
+PS --> MS: 写入操作完成
+deactivate PS
+
+MS --> C: 返回写入结果
+deactivate MS
+
+== 分片平衡流程 ==
+
+CS -> CS: 检测分片不平衡
+CS -> PS: 发起块迁移
+activate PS
+
+PS -> SS: 开始块迁移
+activate SS
+
+loop 迁移数据块
+    PS -> WT: 读取源数据
+    activate WT
+    WT --> PS: 返回数据
+    deactivate WT
+
+    PS -> SS: 传输数据块
+    SS -> WT: 写入目标数据
+    activate WT
+    WT --> SS: 写入确认
+    deactivate WT
+    SS --> PS: 接收确认
+end
+
+PS -> CS: 更新块所有权
+activate CS
+CS -> CS: 更新元数据
+CS --> PS: 确认更新
+deactivate CS
+
+PS -> WT: 删除已迁移数据
+activate WT
+WT --> PS: 删除确认
+deactivate WT
+
+SS --> PS: 迁移完成
+deactivate SS
+PS --> CS: 迁移完成通知
+deactivate PS
+
+== 复制集选举流程 ==
+
+note over PS, SS: 主节点故障
+
+SS -> SS: 检测主节点失联
+SS -> SS: 发起选举
+SS -> SS: 投票给自己
+
+SS -> PS: 请求投票 (如果PS恢复)
+alt PS响应
+    PS -> PS: 检查候选者资格
+    PS --> SS: 投票响应
+else PS无响应
+    note right of SS: 等待超时
+end
+
+SS -> SS: 统计选票
+SS -> SS: 成为新主节点
+
+SS -> CS: 更新复制集状态
+activate CS
+CS --> SS: 确认状态更新
+deactivate CS
+
+SS -> C: 开始接受写入请求
+
+== 事务处理流程 ==
+
+C -> MS: 开始事务
+activate MS
+
+MS -> PS: 转发事务开始
+activate PS
+PS -> WT: 开始存储层事务
+activate WT
+WT --> PS: 事务ID
+deactivate WT
+PS --> MS: 事务已开始
+deactivate PS
+
+MS --> C: 事务开始确认
+deactivate MS
+
+loop 事务操作
+    C -> MS: 事务内操作
+    activate MS
+    MS -> PS: 转发操作
+    activate PS
+    PS -> WT: 在事务中执行
+    activate WT
+    WT --> PS: 操作结果
+    deactivate WT
+    PS --> MS: 操作完成
+    deactivate PS
+    MS --> C: 操作结果
+    deactivate MS
+end
+
+C -> MS: 提交事务
+activate MS
+MS -> PS: 提交事务
+activate PS
+PS -> WT: 提交存储层事务
+activate WT
+note right of WT: 持久化所有更改
+WT --> PS: 提交完成
+deactivate WT
+PS --> MS: 事务已提交
+deactivate PS
+MS --> C: 事务提交成功
+deactivate MS
+
+@enduml
