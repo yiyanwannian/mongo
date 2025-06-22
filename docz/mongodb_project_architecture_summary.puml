@@ -1,0 +1,207 @@
+@startuml MongoDB项目架构总结图
+title MongoDB 项目架构总结 - 核心模块与源码映射
+
+!define PRIMARY_COLOR #2196F3
+!define SECONDARY_COLOR #4CAF50
+!define ACCENT_COLOR #FF9800
+!define STORAGE_COLOR #9C27B0
+
+' ================================
+' 核心架构层次
+' ================================
+
+package "MongoDB 分片集群架构" as MongoDBCluster {
+    
+    ' 客户端接入层
+    rectangle "客户端接入层" as ClientTier #E3F2FD {
+        [应用程序] as Apps
+        [MongoDB 驱动程序] as Drivers
+        [连接池管理] as ConnMgmt
+        
+        Apps --> Drivers
+        Drivers --> ConnMgmt
+        
+        note right of Apps
+            **功能**: 应用程序接入
+            **特性**: 多语言驱动支持
+        end note
+    }
+    
+    ' mongos 路由层
+    rectangle "mongos 路由层" as RouterTier PRIMARY_COLOR {
+        [mongos 集群] as MongosCluster
+        [路由决策引擎] as RoutingEngine
+        [分片注册表] as ShardRegistry
+        [目录缓存] as CatalogCache
+        
+        MongosCluster --> RoutingEngine
+        RoutingEngine --> ShardRegistry
+        RoutingEngine --> CatalogCache
+        
+        note right of MongosCluster
+            **源码**: src/mongo/s/
+            **核心类**:
+            - ServiceEntryPointRouterRole
+            - Grid
+            - CollectionRoutingInfoTargeter
+        end note
+    }
+    
+    ' 配置服务器层
+    rectangle "配置服务器层" as ConfigTier ACCENT_COLOR {
+        [配置服务器复制集] as ConfigRS
+        [分片目录管理器] as CatalogManager
+        [配置数据库] as ConfigDB
+        [负载均衡控制] as BalancerControl
+        
+        ConfigRS --> CatalogManager
+        CatalogManager --> ConfigDB
+        CatalogManager --> BalancerControl
+        
+        note right of ConfigRS
+            **源码**: src/mongo/db/s/config/
+            **核心类**:
+            - ShardingCatalogManager
+            - ShardingInitializationMongoD
+        end note
+    }
+    
+    ' 分片服务器层
+    rectangle "分片服务器层" as ShardTier SECONDARY_COLOR {
+        [分片复制集群] as ShardClusters
+        [mongod 核心] as MongodCore
+        [查询处理引擎] as QueryEngine
+        [复制协调器] as ReplCoordinator
+        
+        ShardClusters --> MongodCore
+        MongodCore --> QueryEngine
+        MongodCore --> ReplCoordinator
+        
+        note right of ShardClusters
+            **源码**: src/mongo/db/
+            **核心模块**:
+            - 查询处理: src/mongo/db/query/
+            - 复制系统: src/mongo/db/repl/
+            - 命令处理: src/mongo/db/commands/
+        end note
+    }
+    
+    ' 存储引擎层
+    rectangle "存储引擎层" as StorageTier STORAGE_COLOR {
+        [WiredTiger 引擎] as WTEngine
+        [记录存储] as RecordStore
+        [索引管理] as IndexMgmt
+        [事务处理] as TransactionMgmt
+        [物理存储] as PhysicalStorage
+        
+        WTEngine --> RecordStore
+        WTEngine --> IndexMgmt
+        WTEngine --> TransactionMgmt
+        RecordStore --> PhysicalStorage
+        IndexMgmt --> PhysicalStorage
+        TransactionMgmt --> PhysicalStorage
+        
+        note right of WTEngine
+            **源码**: src/mongo/db/storage/wiredtiger/
+            **核心类**:
+            - WiredTigerKVEngine
+            - WiredTigerRecordStore
+            - WiredTigerIndex
+            - WiredTigerRecoveryUnit
+        end note
+    }
+    
+    ' 分片管理层
+    rectangle "分片管理层" as ShardMgmtTier #E1F5FE {
+        [负载均衡器] as Balancer
+        [数据迁移管理] as MigrationMgmt
+        [分片键管理] as ShardKeyMgmt
+        [集群监控] as ClusterMonitor
+        
+        Balancer --> MigrationMgmt
+        Balancer --> ShardKeyMgmt
+        Balancer --> ClusterMonitor
+        
+        note right of Balancer
+            **源码**: src/mongo/db/s/balancer/
+            **核心类**:
+            - Balancer
+            - MigrationSourceManager
+            - ShardKeyPattern
+        end note
+    }
+}
+
+' ================================
+' 层间连接关系
+' ================================
+
+' 客户端到路由器
+ConnMgmt --> MongosCluster : 请求路由
+
+' 路由器到配置服务器
+CatalogCache --> ConfigRS : 元数据查询
+ShardRegistry --> ConfigRS : 分片信息
+
+' 路由器到分片
+RoutingEngine --> ShardClusters : 查询分发
+
+' 配置服务器到分片管理
+BalancerControl --> Balancer : 均衡控制
+
+' 分片管理到分片服务器
+MigrationMgmt --> ShardClusters : 数据迁移
+
+' 分片服务器到存储引擎
+QueryEngine --> WTEngine : 存储访问
+ReplCoordinator --> WTEngine : 复制写入
+
+' ================================
+' 关键数据流
+' ================================
+
+' 查询数据流
+ConnMgmt ..> RoutingEngine : 查询请求
+RoutingEngine ..> QueryEngine : 分片查询
+QueryEngine ..> RecordStore : 数据读取
+
+' 写入数据流
+ConnMgmt ..> RoutingEngine : 写入请求
+RoutingEngine ..> MongodCore : 分片写入
+MongodCore ..> TransactionMgmt : 事务写入
+
+' 管理数据流
+ConfigDB ..> Balancer : 配置信息
+Balancer ..> MigrationMgmt : 迁移指令
+MigrationMgmt ..> PhysicalStorage : 数据传输
+
+' ================================
+' 架构特性说明
+' ================================
+
+note bottom
+    **MongoDB 分片集群架构特性**:
+    
+    **水平扩展**: 
+    - mongos 路由器无状态，可水平扩展
+    - 分片服务器支持动态添加
+    - 配置服务器采用复制集保证高可用
+    
+    **数据分布**:
+    - 基于分片键自动分布数据
+    - 负载均衡器自动迁移数据块
+    - 支持区域分片和标签感知
+    
+    **一致性保证**:
+    - WiredTiger 提供 MVCC 和事务支持
+    - 复制集保证数据冗余和一致性
+    - 配置服务器协调集群元数据
+    
+    **性能优化**:
+    - 多级缓存机制
+    - 查询路由优化
+    - 并行查询处理
+    - 存储引擎优化
+end note
+
+@enduml

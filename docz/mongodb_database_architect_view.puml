@@ -1,0 +1,774 @@
+@startuml MongoDB数据库架构师视角
+title MongoDB 分布式数据库系统架构设计 - 架构师视角
+
+!define LIGHT_BLUE #E8F4FD
+!define LIGHT_GREEN #E8F5E8
+!define LIGHT_ORANGE #FFF8E1
+!define LIGHT_PURPLE #F3E5F5
+!define LIGHT_GRAY #F8F9FA
+
+' ================================
+' 客户端接入与负载分发层
+' ================================
+package ClientAccessLayer as "客户端接入与负载分发层" LIGHT_GRAY {
+    
+    component ApplicationTier as "应用程序层" #FFFFFF {
+        [Web应用服务器] as WebServers
+        [微服务集群] as Microservices
+        [数据分析平台] as Analytics
+        [移动应用后端] as MobileBackend
+        
+        note right of WebServers
+            **设计思路**: 
+            - 多语言驱动支持
+            - 连接池管理
+            - 自动故障转移
+            - 读写分离配置
+        end note
+    }
+    
+    component DriverLayer as "驱动程序层" #FFFFFF {
+        [MongoDB Driver Pool] as DriverPool
+        [Connection Manager] as ConnMgr
+        [Load Balancer] as LoadBalancer
+        [Failover Handler] as FailoverHandler
+        
+        WebServers --> DriverPool
+        Microservices --> DriverPool
+        Analytics --> DriverPool
+        MobileBackend --> DriverPool
+        
+        DriverPool --> ConnMgr
+        ConnMgr --> LoadBalancer
+        LoadBalancer --> FailoverHandler
+    }
+}
+
+' ================================
+' mongos 查询路由与分发层
+' ================================
+package QueryRoutingLayer as "查询路由与分发层" LIGHT_BLUE {
+    
+    component MongosCluster as "mongos 路由器集群" #FFFFFF {
+        [mongos Instance 1] as Mongos1
+        [mongos Instance 2] as Mongos2
+        [mongos Instance N] as MongosN
+        
+        note right of Mongos1
+            **核心设计原则**:
+            - 无状态架构设计
+            - 水平扩展能力
+            - 查询路由优化
+            - 结果聚合处理
+            
+            **源码位置**:
+            src/mongo/s/service_entry_point_router_role.cpp
+            src/mongo/s/grid.cpp
+        end note
+    }
+    
+    component RoutingCore as "路由核心引擎" #FFFFFF {
+        [ServiceEntryPointRouterRole] as RouterEntry
+        [Grid] as GridManager
+        [CollectionRoutingInfoTargeter] as Targeter
+        [ShardRegistry] as ShardRegistry
+        [CatalogCache] as CatalogCache
+        [ClusterCursorManager] as CursorManager
+        
+        RouterEntry --> GridManager : 请求分发
+        GridManager --> Targeter : 路由决策
+        Targeter --> ShardRegistry : 分片查找
+        ShardRegistry --> CatalogCache : 元数据缓存
+        GridManager --> CursorManager : 游标管理
+        
+        note right of Targeter
+            **路由策略**:
+            - 分片键匹配路由
+            - 范围查询分发
+            - 广播查询处理
+            - 聚合管道优化
+        end note
+    }
+    
+    component QueryProcessing as "查询处理引擎" #FFFFFF {
+        [ClusterFind] as ClusterFind
+        [ClusterAggregate] as ClusterAgg
+        [ClusterWrite] as ClusterWrite
+        [AsyncResultsMerger] as ResultMerger
+        [ParallelQueryExecutor] as ParallelExec
+        
+        Targeter --> ClusterFind : 查找操作
+        Targeter --> ClusterAgg : 聚合操作
+        Targeter --> ClusterWrite : 写入操作
+        ClusterFind --> ResultMerger : 结果合并
+        ClusterAgg --> ResultMerger : 聚合结果
+        ParallelExec --> ResultMerger : 并行执行
+    }
+}
+
+' ================================
+' 配置服务器与元数据管理层
+' ================================
+package ConfigManagementLayer as "配置服务器与元数据管理层" LIGHT_ORANGE {
+    
+    component ConfigServerCluster as "配置服务器集群" #FFFFFF {
+        [Config Primary] as ConfigPrimary
+        [Config Secondary 1] as ConfigSec1
+        [Config Secondary 2] as ConfigSec2
+        
+        ConfigPrimary --> ConfigSec1 : 主从复制
+        ConfigPrimary --> ConfigSec2 : 主从复制
+        ConfigSec1 --> ConfigPrimary : 心跳监控
+        ConfigSec2 --> ConfigPrimary : 心跳监控
+        
+        note right of ConfigPrimary
+            **高可用设计**:
+            - 复制集架构
+            - 自动故障转移
+            - 数据一致性保证
+            - 事务支持
+            
+            **源码位置**:
+            src/mongo/db/s/config/sharding_catalog_manager.cpp
+        end note
+    }
+    
+    component MetadataManagement as "元数据管理引擎" #FFFFFF {
+        [ShardingCatalogManager] as CatalogManager
+        [ShardingInitializationMongoD] as ShardInit
+        [DatabaseOperations] as DatabaseOps
+        [CollectionOperations] as CollectionOps
+        [ChunkOperations] as ChunkOps
+        [VersionManager] as VersionMgr
+        
+        CatalogManager --> ShardInit : 分片初始化
+        CatalogManager --> DatabaseOps : 数据库管理
+        CatalogManager --> CollectionOps : 集合管理
+        CatalogManager --> ChunkOps : 数据块管理
+        CatalogManager --> VersionMgr : 版本控制
+        
+        note right of CatalogManager
+            **元数据管理策略**:
+            - 分片信息维护
+            - 数据块分布管理
+            - 版本控制机制
+            - 事务一致性保证
+        end note
+    }
+    
+    database ConfigDatabase as "配置数据库" #FFFFFF {
+        [config.shards] as ShardsCollection
+        [config.databases] as DatabasesCollection
+        [config.collections] as CollectionsCollection
+        [config.chunks] as ChunksCollection
+        [config.changelog] as ChangelogCollection
+        [config.locks] as LocksCollection
+        [config.version] as VersionCollection
+        
+        note right of ShardsCollection
+            **配置数据结构**:
+            - 分片拓扑信息
+            - 数据库分片配置
+            - 集合分片策略
+            - 数据块分布映射
+            - 变更历史记录
+        end note
+    }
+}
+
+' ================================
+' 分片数据存储与处理层
+' ================================
+package ShardDataLayer as "分片数据存储与处理层" LIGHT_GREEN {
+    
+    component ShardCluster0 as "分片集群 0" #FFFFFF {
+        [Shard0 Primary] as S0Primary
+        [Shard0 Secondary 1] as S0Sec1
+        [Shard0 Secondary 2] as S0Sec2
+        [Shard0 Arbiter] as S0Arbiter
+        
+        S0Primary --> S0Sec1 : 数据复制
+        S0Primary --> S0Sec2 : 数据复制
+        S0Primary --> S0Arbiter : 选举参与
+        
+        note right of S0Primary
+            **复制集设计**:
+            - 主从复制机制
+            - 自动故障转移
+            - 读写分离支持
+            - 数据一致性保证
+        end note
+    }
+    
+    component ShardCluster1 as "分片集群 1" #FFFFFF {
+        [Shard1 Primary] as S1Primary
+        [Shard1 Secondary 1] as S1Sec1
+        [Shard1 Secondary 2] as S1Sec2
+        [Shard1 Arbiter] as S1Arbiter
+        
+        S1Primary --> S1Sec1 : 数据复制
+        S1Primary --> S1Sec2 : 数据复制
+        S1Primary --> S1Arbiter : 选举参与
+    }
+    
+    component ShardClusterN as "分片集群 N" #FFFFFF {
+        [ShardN Primary] as SNPrimary
+        [ShardN Secondary 1] as SNSec1
+        [ShardN Secondary 2] as SNSec2
+        [ShardN Arbiter] as SNArbiter
+        
+        SNPrimary --> SNSec1 : 数据复制
+        SNPrimary --> SNSec2 : 数据复制
+        SNPrimary --> SNArbiter : 选举参与
+    }
+}
+
+' ================================
+' mongod 核心数据库引擎层
+' ================================
+package MongodCoreLayer as "mongod 核心数据库引擎层" LIGHT_PURPLE {
+    
+    component ServiceEntryPoint as "服务入口点" #FFFFFF {
+        [ServiceEntryPointShardRole] as ShardEntry
+        [ServiceEntryPointRSEndpoint] as RSEntry
+        [TransportLayer] as Transport
+        [SessionWorkflow] as SessionWF
+        [NetworkInterface] as NetworkIF
+        
+        Transport --> SessionWF : 会话管理
+        SessionWF --> ShardEntry : 分片服务
+        SessionWF --> RSEntry : 复制集服务
+        Transport --> NetworkIF : 网络接口
+        
+        note right of Transport
+            **网络层设计**:
+            - 异步I/O处理
+            - 连接池管理
+            - 协议解析
+            - 压缩传输
+            
+            **源码位置**:
+            src/mongo/transport/
+        end note
+    }
+    
+    component CommandProcessing as "命令处理引擎" #FFFFFF {
+        [CommandRegistry] as CmdRegistry
+        [BasicCommand] as BasicCmd
+        [WriteCommand] as WriteCmd
+        [ReadCommand] as ReadCmd
+        [AdminCommand] as AdminCmd
+        [AggregateCommand] as AggCmd
+        
+        ShardEntry --> CmdRegistry : 命令分发
+        CmdRegistry --> BasicCmd : 基础命令
+        CmdRegistry --> WriteCmd : 写入命令
+        CmdRegistry --> ReadCmd : 读取命令
+        CmdRegistry --> AdminCmd : 管理命令
+        CmdRegistry --> AggCmd : 聚合命令
+        
+        note right of CmdRegistry
+            **命令处理架构**:
+            - 命令注册机制
+            - 权限验证
+            - 参数解析
+            - 执行调度
+            
+            **源码位置**:
+            src/mongo/db/commands/
+        end note
+    }
+    
+    component QueryEngine as "查询执行引擎" #FFFFFF {
+        [QueryPlanner] as QueryPlanner
+        [PlanExecutor] as PlanExecutor
+        [PlanCache] as PlanCache
+        [IndexCatalog] as IndexCatalog
+        [CanonicalQuery] as CanonicalQuery
+        [PlanEnumerator] as PlanEnumerator
+        
+        ReadCmd --> QueryPlanner : 查询规划
+        QueryPlanner --> CanonicalQuery : 查询规范化
+        CanonicalQuery --> PlanEnumerator : 计划枚举
+        PlanEnumerator --> PlanExecutor : 计划执行
+        PlanExecutor --> PlanCache : 计划缓存
+        QueryPlanner --> IndexCatalog : 索引选择
+        
+        note right of QueryPlanner
+            **查询优化策略**:
+            - 基于成本的优化
+            - 索引选择算法
+            - 连接顺序优化
+            - 谓词下推
+            
+            **源码位置**:
+            src/mongo/db/query/
+        end note
+    }
+    
+    component AggregationFramework as "聚合计算框架" #FFFFFF {
+        [Pipeline] as AggPipeline
+        [DocumentSource] as DocSource
+        [ExpressionContext] as ExprContext
+        [AccumulatorFactory] as AccumFactory
+        [PipelineOptimizer] as PipelineOpt
+        
+        AggCmd --> AggPipeline : 聚合管道
+        AggPipeline --> DocSource : 文档源
+        DocSource --> ExprContext : 表达式上下文
+        ExprContext --> AccumFactory : 累加器工厂
+        AggPipeline --> PipelineOpt : 管道优化
+        
+        note right of AggPipeline
+            **聚合优化技术**:
+            - 管道阶段重排
+            - 谓词下推优化
+            - 索引利用
+            - 并行处理
+        end note
+    }
+}
+
+' ================================
+' 复制与一致性保证层
+' ================================
+package ReplicationLayer as "复制与一致性保证层" LIGHT_BLUE {
+    
+    component ReplicationCoordinator as "复制协调器" #FFFFFF {
+        [ReplicationCoordinatorImpl] as ReplCoord
+        [TopologyCoordinator] as TopoCoord
+        [ReplicationExecutor] as ReplExec
+        [ElectionHandoff] as Election
+        [HeartbeatManager] as HeartbeatMgr
+        
+        ReplCoord --> TopoCoord : 拓扑管理
+        ReplCoord --> ReplExec : 复制执行
+        ReplCoord --> Election : 选举处理
+        ReplCoord --> HeartbeatMgr : 心跳管理
+        
+        note right of ReplCoord
+            **复制机制设计**:
+            - Raft一致性算法
+            - 自动故障检测
+            - 选举机制
+            - 数据同步
+            
+            **源码位置**:
+            src/mongo/db/repl/
+        end note
+    }
+    
+    component OplogManagement as "操作日志管理" #FFFFFF {
+        [OplogManager] as OplogManager
+        [OplogApplier] as OplogApplier
+        [OplogFetcher] as OplogFetcher
+        [OplogBuffer] as OplogBuffer
+        [InitialSyncer] as InitialSyncer
+        
+        ReplCoord --> OplogManager : 日志管理
+        OplogManager --> OplogApplier : 日志应用
+        OplogManager --> OplogFetcher : 日志获取
+        OplogApplier --> OplogBuffer : 日志缓冲
+        OplogManager --> InitialSyncer : 初始同步
+        
+        note right of OplogManager
+            **操作日志策略**:
+            - 幂等性保证
+            - 顺序应用
+            - 批量处理
+            - 压缩优化
+        end note
+    }
+}
+
+' ================================
+' WiredTiger 存储引擎层
+' ================================
+package StorageEngineLayer as "WiredTiger 存储引擎层" LIGHT_PURPLE {
+    
+    component WiredTigerCore as "WiredTiger 核心引擎" #FFFFFF {
+        [WiredTigerKVEngine] as WTKVEngine
+        [WiredTigerSessionCache] as WTSessionCache
+        [WiredTigerSizeStorer] as WTSizeStorer
+        [WiredTigerOplogManager] as WTOplogMgr
+        [WiredTigerServerStatusSection] as WTServerStatus
+        
+        WTKVEngine --> WTSessionCache : 会话管理
+        WTKVEngine --> WTSizeStorer : 大小统计
+        WTKVEngine --> WTOplogMgr : 操作日志
+        WTKVEngine --> WTServerStatus : 状态监控
+        
+        note right of WTKVEngine
+            **存储引擎特性**:
+            - MVCC并发控制
+            - 文档级锁定
+            - 数据压缩
+            - 检查点机制
+            
+            **源码位置**:
+            src/mongo/db/storage/wiredtiger/
+        end note
+    }
+    
+    component DataStorage as "数据存储管理" #FFFFFF {
+        [WiredTigerRecordStore] as WTRecordStore
+        [WiredTigerRecordStore Capped] as WTCapped
+        [WiredTigerRecordStore Oplog] as WTOplog
+        [WiredTigerCursor] as WTCursor
+        [RecordStoreValidateAdaptor] as ValidateAdaptor
+        
+        WTKVEngine --> WTRecordStore : 记录存储
+        WTRecordStore --> WTCapped : 固定集合
+        WTRecordStore --> WTOplog : 操作日志
+        WTRecordStore --> WTCursor : 游标操作
+        WTRecordStore --> ValidateAdaptor : 数据验证
+        
+        note right of WTRecordStore
+            **存储优化技术**:
+            - B+树存储结构
+            - 页面压缩算法
+            - 预读机制
+            - 写入优化
+        end note
+    }
+    
+    component IndexStorage as "索引存储管理" #FFFFFF {
+        [WiredTigerIndex] as WTIndex
+        [WiredTigerIndexStandard] as WTIndexStd
+        [WiredTigerIndexUnique] as WTIndexUniq
+        [WiredTigerIndexCursor] as WTIndexCursor
+        [WiredTigerIndexBulkBuilder] as WTBulkBuilder
+        
+        WTKVEngine --> WTIndex : 索引存储
+        WTIndex --> WTIndexStd : 标准索引
+        WTIndex --> WTIndexUniq : 唯一索引
+        WTIndex --> WTIndexCursor : 索引游标
+        WTIndex --> WTBulkBuilder : 批量构建
+        
+        note right of WTIndex
+            **索引优化策略**:
+            - 前缀压缩
+            - 索引统计信息
+            - 并发构建
+            - 增量维护
+        end note
+    }
+    
+    component TransactionManagement as "事务管理引擎" #FFFFFF {
+        [WiredTigerRecoveryUnit] as WTRecoveryUnit
+        [WiredTigerSnapshot] as WTSnapshot
+        [WiredTigerBeginTxnBlock] as WTTxnBlock
+        [TimestampManager] as TimestampMgr
+        [CheckpointManager] as CheckpointMgr
+        
+        WTKVEngine --> WTRecoveryUnit : 恢复单元
+        WTRecoveryUnit --> WTSnapshot : 快照管理
+        WTRecoveryUnit --> WTTxnBlock : 事务块
+        WTRecoveryUnit --> TimestampMgr : 时间戳管理
+        WTKVEngine --> CheckpointMgr : 检查点管理
+        
+        note right of WTRecoveryUnit
+            **事务ACID保证**:
+            - 原子性保证
+            - 一致性检查
+            - 隔离级别控制
+            - 持久性机制
+        end note
+    }
+    
+    database PhysicalStorage as "物理存储层" #FFFFFF {
+        [WiredTiger.wt] as WTMetadata
+        [collection files] as CollectionFiles
+        [index files] as IndexFiles
+        [WiredTiger logs] as LogFiles
+        [journal directory] as JournalDir
+        [checkpoint files] as CheckpointFiles
+        
+        note right of WTMetadata
+            **存储文件组织**:
+            - 元数据文件
+            - 数据文件分片
+            - 索引文件分离
+            - 事务日志
+            - 检查点快照
+        end note
+    }
+}
+
+' ================================
+' 分片管理与负载均衡层
+' ================================
+package ShardManagementLayer as "分片管理与负载均衡层" LIGHT_GREEN {
+    
+    component LoadBalancer as "负载均衡器" #FFFFFF {
+        [Balancer] as BalancerMain
+        [BalancerChunkSelectionPolicy] as ChunkPolicy
+        [BalancerCommandsScheduler] as CmdScheduler
+        [ClusterStatistics] as ClusterStats
+        [BalancerDefragmentationPolicy] as DefragPolicy
+        
+        BalancerMain --> ChunkPolicy : 数据块选择
+        BalancerMain --> CmdScheduler : 命令调度
+        BalancerMain --> ClusterStats : 集群统计
+        BalancerMain --> DefragPolicy : 碎片整理
+        
+        note right of BalancerMain
+            **负载均衡策略**:
+            - 自动数据迁移
+            - 负载监控
+            - 碎片整理
+            - 性能优化
+            
+            **源码位置**:
+            src/mongo/db/s/balancer/
+        end note
+    }
+    
+    component DataMigration as "数据迁移引擎" #FFFFFF {
+        [MigrationSourceManager] as MigrationSrc
+        [MigrationDestinationManager] as MigrationDest
+        [MigrationChunkClonerSource] as ChunkCloner
+        [SessionCatalogMigrationSource] as SessionMigration
+        [MigrationCoordinator] as MigrationCoord
+        
+        CmdScheduler --> MigrationSrc : 迁移源
+        MigrationSrc --> MigrationDest : 迁移目标
+        MigrationSrc --> ChunkCloner : 数据克隆
+        MigrationSrc --> SessionMigration : 会话迁移
+        MigrationSrc --> MigrationCoord : 迁移协调
+        
+        note right of MigrationSrc
+            **迁移机制设计**:
+            - 在线数据迁移
+            - 一致性保证
+            - 故障恢复
+            - 性能优化
+        end note
+    }
+    
+    component ShardKeyManagement as "分片键管理" #FFFFFF {
+        [ShardKeyPattern] as ShardKeyPattern
+        [InitialSplitPolicy] as SplitPolicy
+        [ShardKeyValidation] as KeyValidation
+        [BSONElementHasher] as Hasher
+        [ShardKeyTargeting] as KeyTargeting
+        
+        ShardKeyPattern --> SplitPolicy : 分割策略
+        ShardKeyPattern --> KeyValidation : 键验证
+        ShardKeyPattern --> Hasher : 哈希计算
+        ShardKeyPattern --> KeyTargeting : 目标选择
+        
+        note right of ShardKeyPattern
+            **分片键设计原则**:
+            - 高基数保证
+            - 查询友好性
+            - 写入分布均匀
+            - 避免热点数据
+        end note
+    }
+}
+
+' ================================
+' 连接关系定义
+' ================================
+
+' 客户端到路由器
+FailoverHandler --> Mongos1 : 请求路由
+FailoverHandler --> Mongos2 : 负载均衡
+FailoverHandler --> MongosN : 故障转移
+
+' 路由器内部连接
+Mongos1 --> RoutingCore : 路由处理
+Mongos2 --> RoutingCore : 路由处理
+MongosN --> RoutingCore : 路由处理
+
+' 路由器到配置服务器
+CatalogCache --> ConfigServerCluster : 元数据查询
+ShardRegistry --> ConfigServerCluster : 分片注册
+
+' 路由器到分片
+ResultMerger --> ShardCluster0 : 查询分片0
+ResultMerger --> ShardCluster1 : 查询分片1
+ResultMerger --> ShardClusterN : 查询分片N
+
+' 配置服务器内部
+ConfigPrimary --> MetadataManagement : 元数据管理
+MetadataManagement --> ConfigDatabase : 配置存储
+
+' 分片服务器内部
+S0Primary --> ServiceEntryPoint : 服务入口
+S1Primary --> ServiceEntryPoint : 服务入口
+SNPrimary --> ServiceEntryPoint : 服务入口
+
+' mongod内部连接
+ServiceEntryPoint --> CommandProcessing : 命令处理
+CommandProcessing --> QueryEngine : 查询引擎
+CommandProcessing --> AggregationFramework : 聚合框架
+
+' 复制系统连接
+S0Primary --> ReplicationCoordinator : 复制协调
+S1Primary --> ReplicationCoordinator : 复制协调
+SNPrimary --> ReplicationCoordinator : 复制协调
+ReplicationCoordinator --> OplogManagement : 操作日志
+
+' 存储引擎连接
+QueryEngine --> WiredTigerCore : 存储访问
+AggregationFramework --> WiredTigerCore : 存储访问
+WiredTigerCore --> DataStorage : 数据存储
+WiredTigerCore --> IndexStorage : 索引存储
+WiredTigerCore --> TransactionManagement : 事务管理
+TransactionManagement --> PhysicalStorage : 物理存储
+
+' 分片管理连接
+ConfigServerCluster --> LoadBalancer : 负载均衡
+LoadBalancer --> DataMigration : 数据迁移
+DataMigration --> ShardCluster0 : 迁移到分片0
+DataMigration --> ShardCluster1 : 迁移到分片1
+ShardKeyManagement --> LoadBalancer : 分片键管理
+
+' ================================
+' 数据流向和控制流向
+' ================================
+
+' 查询数据流
+ApplicationTier ..> QueryProcessing : 查询请求
+QueryProcessing ..> WiredTigerCore : 数据访问
+WiredTigerCore ..> PhysicalStorage : 物理I/O
+
+' 写入数据流
+ApplicationTier ..> CommandProcessing : 写入请求
+CommandProcessing ..> TransactionManagement : 事务写入
+TransactionManagement ..> PhysicalStorage : 持久化
+
+' 管理控制流
+ConfigDatabase ..> LoadBalancer : 配置信息
+LoadBalancer ..> DataMigration : 迁移控制
+DataMigration ..> PhysicalStorage : 数据传输
+
+' 复制控制流
+ReplicationCoordinator ..> OplogManagement : 复制控制
+OplogManagement ..> WiredTigerCore : 日志写入
+
+' ================================
+' 架构设计思路说明
+' ================================
+
+note top of ClientAccessLayer
+    **客户端接入层设计思路**:
+
+    1. **多语言驱动支持**: 提供统一的API接口，支持各种编程语言
+    2. **连接池管理**: 复用连接，减少连接开销，提高性能
+    3. **智能负载均衡**: 基于延迟和负载的智能路由选择
+    4. **自动故障转移**: 检测故障并自动切换到可用节点
+    5. **读写分离**: 支持读写分离，提高读取性能
+end note
+
+note top of QueryRoutingLayer
+    **查询路由层设计思路**:
+
+    1. **无状态架构**: mongos不存储数据，便于水平扩展
+    2. **智能路由**: 基于分片键的精确路由和范围路由
+    3. **查询优化**: 谓词下推、投影下推等优化技术
+    4. **结果聚合**: 高效的多分片结果合并算法
+    5. **缓存机制**: 元数据缓存减少配置服务器访问
+end note
+
+note top of ConfigManagementLayer
+    **配置管理层设计思路**:
+
+    1. **高可用架构**: 复制集保证配置服务器高可用
+    2. **元数据一致性**: 强一致性保证集群元数据正确性
+    3. **版本控制**: 分片版本管理避免脏读和数据不一致
+    4. **事务支持**: 配置变更操作的事务性保证
+    5. **变更日志**: 完整的变更历史记录便于审计和回滚
+end note
+
+note top of ShardDataLayer
+    **分片数据层设计思路**:
+
+    1. **复制集架构**: 每个分片采用复制集保证高可用
+    2. **自动故障转移**: 主节点故障时自动选举新主节点
+    3. **读写分离**: 支持从从节点读取，分散读取压力
+    4. **数据分布**: 基于分片键的数据水平分布
+    5. **弹性扩展**: 支持动态添加和删除分片
+end note
+
+note top of MongodCoreLayer
+    **mongod核心层设计思路**:
+
+    1. **分层架构**: 清晰的分层设计，职责分离
+    2. **插件化设计**: 存储引擎、认证等采用插件架构
+    3. **异步处理**: Future/Promise模式提高并发性能
+    4. **查询优化**: 基于成本的查询优化器
+    5. **聚合框架**: 强大的数据处理和分析能力
+end note
+
+note top of ReplicationLayer
+    **复制一致性层设计思路**:
+
+    1. **Raft一致性**: 基于Raft算法的强一致性保证
+    2. **操作日志**: 幂等的操作日志保证数据一致性
+    3. **选举机制**: 自动选举保证集群可用性
+    4. **心跳监控**: 实时监控节点状态
+    5. **数据同步**: 高效的增量数据同步机制
+end note
+
+note top of StorageEngineLayer
+    **存储引擎层设计思路**:
+
+    1. **MVCC并发**: 多版本并发控制提供文档级并发
+    2. **事务支持**: 完整的ACID事务保证
+    3. **数据压缩**: 多种压缩算法节省存储空间
+    4. **检查点机制**: 定期检查点保证数据持久性
+    5. **性能优化**: 缓存、预读、批量写入等优化技术
+end note
+
+note top of ShardManagementLayer
+    **分片管理层设计思路**:
+
+    1. **自动负载均衡**: 监控负载并自动触发数据迁移
+    2. **在线迁移**: 不停机的数据迁移机制
+    3. **一致性保证**: 迁移过程中的数据一致性保证
+    4. **性能优化**: 迁移过程的性能优化和资源控制
+    5. **故障恢复**: 迁移失败时的自动恢复机制
+end note
+
+' ================================
+' 关键技术特性
+' ================================
+
+note bottom
+    **MongoDB 分布式数据库系统关键技术特性**:
+
+    **1. 分布式架构特性**:
+    - 水平分片: 数据自动分布到多个节点
+    - 复制集: 数据冗余和高可用保证
+    - 自动故障转移: 节点故障时自动切换
+    - 弹性扩展: 支持在线添加和删除节点
+
+    **2. 数据一致性保证**:
+    - MVCC: 多版本并发控制
+    - ACID事务: 完整的事务支持
+    - 强一致性: 配置数据的强一致性
+    - 最终一致性: 分片间数据的最终一致性
+
+    **3. 性能优化技术**:
+    - 查询优化: 基于成本的查询优化器
+    - 索引优化: 多种索引类型和优化策略
+    - 缓存机制: 多层次的缓存系统
+    - 并行处理: 查询和聚合的并行执行
+
+    **4. 运维管理特性**:
+    - 自动化管理: 自动负载均衡和数据迁移
+    - 监控告警: 完善的监控和告警机制
+    - 在线运维: 支持在线配置变更和维护
+    - 备份恢复: 完整的备份和恢复方案
+
+    **5. 安全性保障**:
+    - 认证授权: 完善的用户认证和权限管理
+    - 数据加密: 传输和存储的数据加密
+    - 审计日志: 完整的操作审计记录
+    - 网络安全: SSL/TLS加密通信
+end note
+
+@enduml

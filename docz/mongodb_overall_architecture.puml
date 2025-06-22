@@ -1,0 +1,260 @@
+@startuml MongoDB整体架构图
+title MongoDB 分片集群整体架构
+
+!define CLIENT_COLOR #FFFDE7
+!define ROUTER_COLOR #E3F2FD
+!define CONFIG_COLOR #FFF3E0
+!define SHARD_COLOR #E8F5E8
+!define STORAGE_COLOR #F3E5F5
+
+' 客户端层
+package "客户端层" as ClientLayer CLIENT_COLOR {
+    [应用程序] as App1
+    [应用程序] as App2
+    [应用程序] as App3
+    [MongoDB Driver] as Driver1
+    [MongoDB Driver] as Driver2
+    [MongoDB Driver] as Driver3
+    
+    App1 --> Driver1
+    App2 --> Driver2
+    App3 --> Driver3
+    
+    note right of App1
+        **客户端特性**:
+        - 连接池管理
+        - 自动故障转移
+        - 读写分离
+        - 负载均衡
+    end note
+}
+
+' mongos 路由器层
+package "mongos 路由器层" as RouterLayer ROUTER_COLOR {
+    [mongos-1] as Mongos1 #2196F3
+    [mongos-2] as Mongos2 #2196F3
+    [mongos-3] as Mongos3 #2196F3
+    
+    component "路由核心组件" as RouterCore #1976D2 {
+        [ServiceEntryPointRouterRole]
+        [Grid]
+        [CollectionRoutingInfoTargeter]
+        [ShardRegistry]
+    }
+    
+    Mongos1 --> RouterCore
+    Mongos2 --> RouterCore
+    Mongos3 --> RouterCore
+    
+    note right of Mongos1
+        **路由器功能**:
+        - 查询路由
+        - 负载均衡
+        - 结果合并
+        - 缓存管理
+    end note
+}
+
+' 配置服务器层
+package "配置服务器集群" as ConfigLayer CONFIG_COLOR {
+    
+    component "配置服务器复制集" as ConfigRS #FF9800 {
+        [Config Primary] as ConfigPrimary #F57C00
+        [Config Secondary 1] as ConfigSec1 #EF6C00
+        [Config Secondary 2] as ConfigSec2 #E65100
+        
+        ConfigPrimary --> ConfigSec1 : 复制
+        ConfigPrimary --> ConfigSec2 : 复制
+    }
+    
+    component "配置管理组件" as ConfigMgmt #FF8F00 {
+        [ShardingCatalogManager]
+        [ShardingInitializationMongoD]
+        [BalancerConfiguration]
+    }
+    
+    database "配置数据库" as ConfigDB #FFB300 {
+        [config.shards]
+        [config.databases]
+        [config.collections]
+        [config.chunks]
+        [config.changelog]
+    }
+    
+    ConfigRS --> ConfigMgmt
+    ConfigMgmt --> ConfigDB
+    
+    note right of ConfigPrimary
+        **配置服务器职责**:
+        - 元数据管理
+        - 分片协调
+        - 负载均衡控制
+        - 事务协调
+    end note
+}
+
+' 分片服务器集群
+package "分片服务器集群" as ShardLayer SHARD_COLOR {
+    
+    component "分片 0" as Shard0 #4CAF50 {
+        [Shard0 Primary] as S0Primary #388E3C
+        [Shard0 Secondary 1] as S0Sec1 #2E7D32
+        [Shard0 Secondary 2] as S0Sec2 #1B5E20
+        
+        S0Primary --> S0Sec1 : 复制
+        S0Primary --> S0Sec2 : 复制
+    }
+    
+    component "分片 1" as Shard1 #66BB6A {
+        [Shard1 Primary] as S1Primary #4CAF50
+        [Shard1 Secondary 1] as S1Sec1 #388E3C
+        [Shard1 Secondary 2] as S1Sec2 #2E7D32
+        
+        S1Primary --> S1Sec1 : 复制
+        S1Primary --> S1Sec2 : 复制
+    }
+    
+    component "分片 N" as ShardN #81C784 {
+        [ShardN Primary] as SNPrimary #66BB6A
+        [ShardN Secondary 1] as SNSec1 #4CAF50
+        [ShardN Secondary 2] as SNSec2 #388E3C
+        
+        SNPrimary --> SNSec1 : 复制
+        SNPrimary --> SNSec2 : 复制
+    }
+    
+    note right of S0Primary
+        **分片服务器功能**:
+        - 数据存储
+        - 查询执行
+        - 索引管理
+        - 本地事务
+    end note
+}
+
+' 存储引擎层
+package "WiredTiger 存储引擎层" as StorageLayer STORAGE_COLOR {
+    
+    component "存储引擎核心" as StorageCore #BA68C8 {
+        [WiredTigerKVEngine]
+        [WiredTigerRecordStore]
+        [WiredTigerIndex]
+        [WiredTigerRecoveryUnit]
+    }
+    
+    component "事务管理" as TransactionMgmt #9C27B0 {
+        [TransactionManager]
+        [SnapshotManager]
+        [TimestampManager]
+    }
+    
+    component "缓存管理" as CacheMgmt #8E24AA {
+        [WiredTigerCache]
+        [EvictionManager]
+        [CompressionManager]
+    }
+    
+    database "物理存储" as PhysicalStorage #7B1FA2 {
+        [数据文件 (.wt)]
+        [索引文件 (.wt)]
+        [事务日志]
+        [检查点文件]
+    }
+    
+    StorageCore --> TransactionMgmt
+    StorageCore --> CacheMgmt
+    StorageCore --> PhysicalStorage
+    
+    note right of StorageCore
+        **存储引擎特性**:
+        - MVCC 并发控制
+        - 数据压缩
+        - 检查点机制
+        - 事务支持
+    end note
+}
+
+' 分片管理层
+package "分片管理层" as ShardMgmtLayer #E1F5FE {
+    
+    component "负载均衡器" as Balancer #03A9F4 {
+        [BalancerChunkSelectionPolicy]
+        [BalancerCommandsScheduler]
+        [ClusterStatistics]
+    }
+    
+    component "数据迁移管理" as MigrationMgmt #0288D1 {
+        [MigrationSourceManager]
+        [MigrationDestinationManager]
+        [MigrationChunkCloner]
+    }
+    
+    component "分片键管理" as ShardKeyMgmt #0277BD {
+        [ShardKeyPattern]
+        [InitialSplitPolicy]
+        [ShardKeyValidation]
+    }
+    
+    Balancer --> MigrationMgmt
+    ShardKeyMgmt --> Balancer
+    
+    note right of Balancer
+        **分片管理功能**:
+        - 自动负载均衡
+        - 数据迁移
+        - 分片键管理
+        - 集群监控
+    end note
+}
+
+' 连接关系
+
+' 客户端到路由器
+Driver1 --> Mongos1 : 连接
+Driver2 --> Mongos2 : 连接
+Driver3 --> Mongos3 : 连接
+
+' 路由器到配置服务器
+RouterCore --> ConfigRS : 元数据查询
+RouterCore --> ConfigMgmt : 配置获取
+
+' 路由器到分片
+RouterCore --> Shard0 : 查询路由
+RouterCore --> Shard1 : 查询路由
+RouterCore --> ShardN : 查询路由
+
+' 配置服务器到分片管理
+ConfigMgmt --> Balancer : 均衡控制
+ConfigMgmt --> ShardKeyMgmt : 分片配置
+
+' 分片管理到分片
+Balancer --> Shard0 : 迁移控制
+Balancer --> Shard1 : 迁移控制
+Balancer --> ShardN : 迁移控制
+
+MigrationMgmt --> Shard0 : 数据迁移
+MigrationMgmt --> Shard1 : 数据迁移
+MigrationMgmt --> ShardN : 数据迁移
+
+' 分片到存储引擎
+Shard0 --> StorageCore : 存储访问
+Shard1 --> StorageCore : 存储访问
+ShardN --> StorageCore : 存储访问
+
+' 数据流向
+Driver1 ..> RouterCore : 查询请求
+RouterCore ..> Shard0 : 数据访问
+Shard0 ..> StorageCore : 存储操作
+StorageCore ..> PhysicalStorage : 物理I/O
+
+' 控制流向
+ConfigMgmt ..> Balancer : 均衡策略
+Balancer ..> MigrationMgmt : 迁移调度
+MigrationMgmt ..> StorageCore : 数据传输
+
+' 元数据流向
+ConfigDB ..> RouterCore : 路由信息
+ConfigDB ..> Balancer : 集群状态
+Balancer ..> ConfigDB : 状态更新
+
+@enduml

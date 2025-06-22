@@ -1,0 +1,359 @@
+@startuml MongoDB 完整系统架构图
+!theme plain
+title MongoDB 完整系统架构图 - 资深架构师视角
+
+' 定义简化配色方案
+skinparam component {
+    BackgroundColor LightBlue
+    BorderColor DarkBlue
+}
+
+skinparam package {
+    BackgroundColor LightYellow
+    BorderColor Orange
+}
+
+skinparam interface {
+    BackgroundColor LightGreen
+    BorderColor DarkGreen
+}
+
+skinparam database {
+    BackgroundColor LightCyan
+    BorderColor DarkCyan
+}
+
+' ================================
+' 客户端接入层
+' ================================
+package "客户端接入层" as ClientLayer #LightGray {
+    [应用程序] as App
+    [MongoDB驱动程序] as Driver
+    [连接池管理器] as ConnPool
+    [负载均衡器] as LoadBalancer
+    
+    App --> Driver
+    Driver --> ConnPool
+    ConnPool --> LoadBalancer
+    
+    note right of Driver : 工厂模式：多语言驱动程序工厂\n策略模式：连接策略选择\n观察者模式：连接状态监控
+}
+
+' ================================
+' mongos 路由服务层
+' ================================
+package "mongos 路由服务层" as RouterLayer #LightBlue {
+    component "服务入口点" as RouterEntry {
+        [ServiceEntryPointRouterRole] as RouterRole
+        [TransportLayer] as RouterTransport
+        [SessionWorkflow] as RouterSession
+    }
+    
+    component "查询路由器" as QueryRouter {
+        [Grid] as GridMgr
+        [CollectionRoutingInfoTargeter] as Targeter
+        [ShardKeyPattern] as ShardKey
+        [ChunkManager] as ChunkMgr
+    }
+    
+    component "命令处理器" as RouterCommands {
+        [CommandRegistry] as RouterCmdRegistry
+        [RouterCommand] as RouterCmd
+        [ClusterCommand] as ClusterCmd
+    }
+    
+    RouterRole --> GridMgr
+    GridMgr --> Targeter
+    Targeter --> ShardKey
+    ShardKey --> ChunkMgr
+    RouterCmdRegistry --> RouterCmd
+    RouterCmdRegistry --> ClusterCmd
+    
+    note right of GridMgr : 单例模式：全局分片网格管理\n策略模式：路由策略选择\n命令模式：分布式命令执行
+}
+
+' ================================
+' 配置服务器层
+' ================================
+package "配置服务器层" as ConfigLayer #LightGreen {
+    component "分片目录管理" as CatalogMgr {
+        [ShardingCatalogManager] as CatalogManager
+        [ConfigServerCatalogCacheLoader] as CacheLoader
+        [ShardRegistry] as ShardRegistry
+    }
+    
+    component "负载均衡器" as Balancer {
+        [BalancerConfiguration] as BalancerConfig
+        [MigrationManager] as MigrationMgr
+        [BalancerChunkSelectionPolicy] as ChunkPolicy
+    }
+    
+    component "配置复制集" as ConfigReplSet {
+        [ReplicationCoordinator] as ConfigReplCoord
+        [OplogManager] as ConfigOplog
+        [ElectionManager] as ConfigElection
+    }
+    
+    CatalogManager --> ShardRegistry
+    CatalogManager --> CacheLoader
+    BalancerConfig --> MigrationMgr
+    MigrationMgr --> ChunkPolicy
+    ConfigReplCoord --> ConfigOplog
+    ConfigReplCoord --> ConfigElection
+    
+    note right of CatalogManager : 观察者模式：配置变更通知\n策略模式：负载均衡策略\n状态模式：复制集状态管理
+}
+
+' ================================
+' mongod 数据服务层
+' ================================
+package "mongod 数据服务层" as DataLayer #LightCyan {
+    component "服务入口点" as DataEntry {
+        [ServiceEntryPointShardRole] as ShardRole
+        [ServiceEntryPointRSEndpoint] as RSEndpoint
+        [TransportLayer] as DataTransport
+    }
+    
+    component "命令处理系统" as CommandSystem {
+        [CommandRegistry] as CmdRegistry
+        [BasicCommand] as BasicCmd
+        [WriteCommand] as WriteCmd
+        [ReadCommand] as ReadCmd
+        [AdminCommand] as AdminCmd
+    }
+    
+    component "查询处理引擎" as QueryEngine {
+        [QueryPlanner] as Planner
+        [PlanExecutor] as Executor
+        [PlanCache] as PlanCache
+        [IndexAccessMethod] as IndexAccess
+    }
+    
+    component "聚合框架" as AggFramework {
+        [Pipeline] as AggPipeline
+        [DocumentSource] as DocSource
+        [Expression] as AggExpression
+        [Accumulator] as AggAccumulator
+    }
+    
+    ShardRole --> CmdRegistry
+    CmdRegistry --> BasicCmd
+    CmdRegistry --> WriteCmd
+    CmdRegistry --> ReadCmd
+    CmdRegistry --> AdminCmd
+    
+    BasicCmd --> Planner
+    Planner --> Executor
+    Executor --> PlanCache
+    Executor --> IndexAccess
+    
+    AggPipeline --> DocSource
+    DocSource --> AggExpression
+    AggExpression --> AggAccumulator
+    
+    note right of CmdRegistry : 命令模式：数据库命令处理\n策略模式：查询计划选择\n模板方法模式：聚合管道处理
+}
+
+' ================================
+' 复制系统层
+' ================================
+package "复制系统层" as ReplicationLayer #LightPink {
+    component "复制协调器" as ReplCoordinator {
+        [ReplicationCoordinator] as ReplCoord
+        [ReplicationExecutor] as ReplExecutor
+        [TopologyCoordinator] as TopoCoord
+    }
+    
+    component "Oplog管理" as OplogMgmt {
+        [OplogManager] as OplogMgr
+        [OplogApplier] as OplogApplier
+        [OplogFetcher] as OplogFetcher
+    }
+    
+    component "选举管理" as ElectionMgmt {
+        [ElectionManager] as ElectionMgr
+        [VoteRequester] as VoteReq
+        [FreshnessChecker] as FreshnessCheck
+    }
+    
+    ReplCoord --> ReplExecutor
+    ReplCoord --> TopoCoord
+    OplogMgr --> OplogApplier
+    OplogMgr --> OplogFetcher
+    ElectionMgr --> VoteReq
+    ElectionMgr --> FreshnessCheck
+    
+    note right of ReplCoord : 状态模式：复制集状态转换\n观察者模式：状态变更通知\n策略模式：选举策略选择
+}
+
+' ================================
+' 存储引擎层
+' ================================
+package "存储引擎层" as StorageLayer #LightSalmon {
+    interface "存储引擎接口" as StorageEngineInterface
+    interface "记录存储接口" as RecordStoreInterface
+    interface "排序数据接口" as SortedDataInterface
+    
+    component "WiredTiger引擎" as WTEngine {
+        [WiredTigerKVEngine] as WTKVEngine
+        [WiredTigerRecordStore] as WTRecordStore
+        [WiredTigerIndex] as WTIndex
+        [WiredTigerRecoveryUnit] as WTRecoveryUnit
+    }
+    
+    component "事务管理" as TransactionMgmt {
+        [TransactionCoordinator] as TxnCoord
+        [TransactionParticipant] as TxnParticipant
+        [PreparedTransactionsList] as PreparedTxns
+    }
+    
+    component "存储工厂" as StorageFactory {
+        [StorageEngineFactory] as EngineFactory
+        [RecordStoreFactory] as RecordFactory
+        [SortedDataInterfaceFactory] as IndexFactory
+    }
+    
+    StorageEngineInterface <|-- WTKVEngine
+    RecordStoreInterface <|-- WTRecordStore
+    SortedDataInterface <|-- WTIndex
+    
+    EngineFactory --> WTKVEngine
+    RecordFactory --> WTRecordStore
+    IndexFactory --> WTIndex
+    
+    TxnCoord --> TxnParticipant
+    TxnParticipant --> PreparedTxns
+    WTRecoveryUnit --> TxnParticipant
+    
+    note right of EngineFactory : 工厂模式：存储引擎创建\n策略模式：事务隔离级别\n模板方法模式：恢复单元处理
+}
+
+' ================================
+' 网络传输层
+' ================================
+package "网络传输层" as TransportLayer #LightSeaGreen {
+    component "传输层抽象" as TransportAbstraction {
+        interface "TransportLayer" as TransportLayerInterface
+        [AsioTransportLayer] as AsioTransport
+        [Session] as NetworkSession
+        [Reactor] as NetworkReactor
+    }
+    
+    component "异步处理" as AsyncProcessing {
+        [AsioNetworkingBaton] as AsioBaton
+        [ThreadPool] as ThreadPoolMgr
+        [ServiceExecutor] as ServiceExec
+    }
+    
+    component "消息处理" as MessageProcessing {
+        [MessageCompressor] as MsgCompressor
+        [OpMsgRequest] as OpMsgReq
+        [OpMsgReply] as OpMsgReply
+        [ReplyBuilderInterface] as ReplyBuilder
+    }
+    
+    TransportLayerInterface <|-- AsioTransport
+    AsioTransport --> NetworkSession
+    NetworkSession --> NetworkReactor
+    
+    AsioBaton --> ThreadPoolMgr
+    ThreadPoolMgr --> ServiceExec
+    
+    MsgCompressor --> OpMsgReq
+    OpMsgReq --> OpMsgReply
+    OpMsgReply --> ReplyBuilder
+    
+    note right of AsioTransport : 策略模式：传输层实现选择\n观察者模式：网络事件处理\n线程池模式：并发请求处理
+}
+
+' ================================
+' 基础设施层
+' ================================
+package "基础设施层" as InfrastructureLayer #Lavender {
+    component "服务上下文" as ServiceContext {
+        [ServiceContext] as SvcContext
+        [OperationContext] as OpContext
+        [Client] as ClientContext
+        [ClockSource] as Clock
+    }
+    
+    component "并发控制" as ConcurrencyControl {
+        [ThreadPool] as ThreadPool
+        [Mutex] as MutexMgr
+        [ConditionVariable] as CondVar
+        [ReadWriteLock] as RWLock
+    }
+    
+    component "监控度量" as Monitoring {
+        [ServerStatusMetric] as ServerStatus
+        [OperationProfiler] as Profiler
+        [CursorManager] as CursorMgr
+        [ConnectionPoolStats] as ConnStats
+    }
+    
+    SvcContext --> OpContext
+    OpContext --> ClientContext
+    SvcContext --> Clock
+    
+    ThreadPool --> MutexMgr
+    MutexMgr --> CondVar
+    CondVar --> RWLock
+    
+    ServerStatus --> Profiler
+    Profiler --> CursorMgr
+    CursorMgr --> ConnStats
+    
+    note right of SvcContext : 单例模式：全局服务上下文\n工厂模式：操作上下文创建\n观察者模式：性能指标收集
+}
+
+' ================================
+' 物理存储层
+' ================================
+package "物理存储层" as PhysicalStorage #LightGoldenRodYellow {
+    database "数据文件\n(.wt)" as DataFiles
+    database "索引文件\n(.wt)" as IndexFiles
+    database "事务日志\n(journal)" as JournalFiles
+    database "配置数据\n(config)" as ConfigFiles
+    database "Oplog集合\n(oplog.rs)" as OplogFiles
+}
+
+' ================================
+' 主要连接关系
+' ================================
+
+' 客户端到路由器
+LoadBalancer --> RouterEntry
+
+' 路由器到配置服务器
+QueryRouter --> CatalogMgr
+QueryRouter --> Balancer
+
+' 路由器到数据服务器
+QueryRouter --> DataEntry
+
+' 配置服务器内部连接
+CatalogMgr --> ConfigReplSet
+Balancer --> ConfigReplSet
+
+' 数据服务器内部连接
+CommandSystem --> QueryEngine
+CommandSystem --> AggFramework
+QueryEngine --> StorageLayer
+AggFramework --> StorageLayer
+
+' 复制系统连接
+DataEntry --> ReplicationLayer
+ReplicationLayer --> StorageLayer
+
+' 存储引擎连接
+StorageLayer --> TransportLayer
+StorageLayer --> InfrastructureLayer
+
+' 物理存储连接
+WTEngine --> DataFiles
+WTEngine --> IndexFiles
+WTEngine --> JournalFiles
+CatalogMgr --> ConfigFiles
+OplogMgmt --> OplogFiles
+
+@enduml

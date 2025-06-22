@@ -1,0 +1,218 @@
+@startuml MongoDB Query Processing Architecture
+!theme plain
+title MongoDB 查询处理架构详图
+
+' 定义颜色样式
+skinparam package {
+    BackgroundColor LightBlue
+    BorderColor DarkBlue
+}
+
+skinparam component {
+    BackgroundColor LightYellow
+    BorderColor Orange
+}
+
+skinparam interface {
+    BackgroundColor LightGreen
+    BorderColor DarkGreen
+}
+
+skinparam class {
+    BackgroundColor LightCyan
+    BorderColor DarkCyan
+}
+
+' 查询入口层
+package "查询入口层 (Query Entry Layer)" #LightCyan {
+    component "FindCmd\n(src/mongo/db/commands/query_cmd/find_cmd.cpp)" as FindCmd #LightGreen
+    component "AggregateCmd\n(src/mongo/db/commands/query_cmd/pipeline_command.cpp)" as AggregateCmd #LightGreen
+    component "CountCmd\n(src/mongo/db/commands/query_cmd/count_cmd.cpp)" as CountCmd #LightGreen
+    component "DistinctCmd\n(src/mongo/db/commands/query_cmd/distinct_cmd.cpp)" as DistinctCmd #LightGreen
+}
+
+' 查询解析层
+package "查询解析层 (Query Parsing Layer)" #LightYellow {
+    component "CanonicalQuery\n(src/mongo/db/query/canonical_query.h)" as CanonicalQuery #Wheat
+    component "QueryRequest\n(src/mongo/db/query/query_request.h)" as QueryRequest #Wheat
+    component "MatchExpression\n(src/mongo/db/matcher/expression.h)" as MatchExpression #Wheat
+    component "Projection\n(src/mongo/db/query/projection.h)" as Projection #Wheat
+    component "Sort\n(src/mongo/db/query/sort_pattern.h)" as Sort #Wheat
+}
+
+' 查询规划层
+package "查询规划层 (Query Planning Layer)" #LightYellow {
+    component "QueryPlanner\n(src/mongo/db/query/planner/query_planner.h)" as QueryPlanner #LightSalmon
+    component "IndexSelection\n(src/mongo/db/query/planner/index_selection.h)" as IndexSelection #LightSalmon
+    component "PlanEnumerator\n(src/mongo/db/query/planner/plan_enumerator.h)" as PlanEnumerator #LightSalmon
+    component "PlanCache\n(src/mongo/db/query/plan_cache.h)" as PlanCache #LightSalmon
+    component "QuerySolution\n(src/mongo/db/query/query_solution.h)" as QuerySolution #LightSalmon
+}
+
+' 查询执行层
+package "查询执行层 (Query Execution Layer)" #LightYellow {
+    package "经典执行引擎 (Classic Engine)" #LightGreen {
+        component "PlanExecutor\n(src/mongo/db/query/plan_executor.h)" as PlanExecutor #LightGreen
+        component "PlanStage\n(src/mongo/db/exec/plan_stage.h)" as PlanStage #LightGreen
+        component "CollectionScan\n(src/mongo/db/exec/collection_scan.h)" as CollectionScan #LightGreen
+        component "IndexScan\n(src/mongo/db/exec/index_scan.h)" as IndexScan #LightGreen
+        component "FetchStage\n(src/mongo/db/exec/fetch.h)" as FetchStage #LightGreen
+        component "SortStage\n(src/mongo/db/exec/sort.h)" as SortStage #LightGreen
+        component "LimitSkipStage\n(src/mongo/db/exec/limit.h)" as LimitSkipStage #LightGreen
+    }
+    
+    package "SBE执行引擎 (SBE Engine)" #LightSteelBlue {
+        component "SBEPlanStage\n(src/mongo/db/exec/sbe/stages/stage.h)" as SBEPlanStage #LightSteelBlue
+        component "SBEScanStage\n(src/mongo/db/exec/sbe/stages/scan.h)" as SBEScanStage #LightSteelBlue
+        component "SBEIndexScan\n(src/mongo/db/exec/sbe/stages/ix_scan.h)" as SBEIndexScan #LightSteelBlue
+        component "SBEFilterStage\n(src/mongo/db/exec/sbe/stages/filter.h)" as SBEFilterStage #LightSteelBlue
+        component "SBEProjectStage\n(src/mongo/db/exec/sbe/stages/project.h)" as SBEProjectStage #LightSteelBlue
+        component "SlotBasedExecutor\n(src/mongo/db/exec/sbe/)" as SlotBasedExecutor #LightSteelBlue
+    }
+}
+
+' 聚合框架层
+package "聚合框架层 (Aggregation Framework Layer)" #LightYellow {
+    component "Pipeline\n(src/mongo/db/pipeline/pipeline.h)" as Pipeline #LightPink
+    component "DocumentSource\n(src/mongo/db/pipeline/document_source.h)" as DocumentSource #LightPink
+    component "DocumentSourceMatch\n(src/mongo/db/pipeline/document_source_match.h)" as DocumentSourceMatch #LightPink
+    component "DocumentSourceProject\n(src/mongo/db/pipeline/document_source_project.h)" as DocumentSourceProject #LightPink
+    component "DocumentSourceGroup\n(src/mongo/db/pipeline/document_source_group.h)" as DocumentSourceGroup #LightPink
+    component "DocumentSourceSort\n(src/mongo/db/pipeline/document_source_sort.h)" as DocumentSourceSort #LightPink
+    component "DocumentSourceLimit\n(src/mongo/db/pipeline/document_source_limit.h)" as DocumentSourceLimit #LightPink
+    component "ExpressionContext\n(src/mongo/db/pipeline/expression_context.h)" as ExpressionContext #LightPink
+}
+
+' 索引访问层
+package "索引访问层 (Index Access Layer)" #Lavender {
+    component "IndexAccessMethod\n(src/mongo/db/index/index_access_method.h)" as IndexAccessMethod #Lavender
+    component "BtreeAccessMethod\n(src/mongo/db/index/btree_access_method.h)" as BtreeAccessMethod #Lavender
+    component "FTSAccessMethod\n(src/mongo/db/index/fts_access_method.h)" as FTSAccessMethod #Lavender
+    component "S2AccessMethod\n(src/mongo/db/index/s2_access_method.h)" as S2AccessMethod #Lavender
+    component "IndexCursor\n(src/mongo/db/storage/sorted_data_interface.h)" as IndexCursor #Lavender
+}
+
+' 存储访问层
+package "存储访问层 (Storage Access Layer)" #LightGray {
+    interface "RecordStore\n(src/mongo/db/storage/record_store.h)" as RecordStore
+    interface "SortedDataInterface\n(src/mongo/db/storage/sorted_data_interface.h)" as SortedDataInterface
+    component "RecordCursor\n(src/mongo/db/storage/record_store.h)" as RecordCursor #LightGray
+    component "SeekableRecordCursor\n(src/mongo/db/storage/record_store.h)" as SeekableRecordCursor #LightGray
+}
+
+' 目录和元数据层
+package "目录和元数据层 (Catalog & Metadata Layer)" #MistyRose {
+    component "CollectionCatalog\n(src/mongo/db/catalog/collection_catalog.h)" as CollectionCatalog #MistyRose
+    component "Collection\n(src/mongo/db/catalog/collection.h)" as Collection #MistyRose
+    component "IndexCatalog\n(src/mongo/db/catalog/index_catalog.h)" as IndexCatalog #MistyRose
+    component "IndexDescriptor\n(src/mongo/db/catalog/index_descriptor.h)" as IndexDescriptor #MistyRose
+}
+
+' 查询优化器
+package "查询优化器 (Query Optimizer)" #LightGoldenRodYellow {
+    component "CostModel\n(src/mongo/db/query/optimizer/)" as CostModel #LightGoldenRodYellow
+    component "ABTOptimizer\n(src/mongo/db/query/optimizer/)" as ABTOptimizer #LightGoldenRodYellow
+    component "LogicalRewriter\n(src/mongo/db/query/optimizer/)" as LogicalRewriter #LightGoldenRodYellow
+    component "PhysicalRewriter\n(src/mongo/db/query/optimizer/)" as PhysicalRewriter #LightGoldenRodYellow
+}
+
+' 连接关系 - 查询入口到解析
+FindCmd --> CanonicalQuery : 解析查询
+AggregateCmd --> Pipeline : 创建管道
+CountCmd --> CanonicalQuery : 解析计数查询
+DistinctCmd --> CanonicalQuery : 解析去重查询
+
+' 查询解析内部连接
+CanonicalQuery --> QueryRequest : 包含
+CanonicalQuery --> MatchExpression : 过滤条件
+CanonicalQuery --> Projection : 投影
+CanonicalQuery --> Sort : 排序
+
+' 查询规划连接
+CanonicalQuery --> QueryPlanner : 输入
+QueryPlanner --> IndexSelection : 索引选择
+QueryPlanner --> PlanEnumerator : 计划枚举
+QueryPlanner --> PlanCache : 缓存查询
+QueryPlanner --> QuerySolution : 生成方案
+
+' 查询执行连接 - 经典引擎
+QuerySolution --> PlanExecutor : 执行计划
+PlanExecutor --> PlanStage : 执行阶段
+PlanStage <|-- CollectionScan : 继承
+PlanStage <|-- IndexScan : 继承
+PlanStage <|-- FetchStage : 继承
+PlanStage <|-- SortStage : 继承
+PlanStage <|-- LimitSkipStage : 继承
+
+' 查询执行连接 - SBE引擎
+QuerySolution --> SlotBasedExecutor : SBE执行
+SlotBasedExecutor --> SBEPlanStage : SBE阶段
+SBEPlanStage <|-- SBEScanStage : 继承
+SBEPlanStage <|-- SBEIndexScan : 继承
+SBEPlanStage <|-- SBEFilterStage : 继承
+SBEPlanStage <|-- SBEProjectStage : 继承
+
+' 聚合框架连接
+Pipeline --> DocumentSource : 包含阶段
+DocumentSource <|-- DocumentSourceMatch : 继承
+DocumentSource <|-- DocumentSourceProject : 继承
+DocumentSource <|-- DocumentSourceGroup : 继承
+DocumentSource <|-- DocumentSourceSort : 继承
+DocumentSource <|-- DocumentSourceLimit : 继承
+Pipeline --> ExpressionContext : 表达式上下文
+
+' 索引访问连接
+IndexScan --> IndexAccessMethod : 使用索引
+SBEIndexScan --> IndexAccessMethod : 使用索引
+IndexAccessMethod <|-- BtreeAccessMethod : B树索引
+IndexAccessMethod <|-- FTSAccessMethod : 全文索引
+IndexAccessMethod <|-- S2AccessMethod : 地理索引
+IndexAccessMethod --> IndexCursor : 索引游标
+
+' 存储访问连接
+CollectionScan --> RecordStore : 集合扫描
+SBEScanStage --> RecordStore : 集合扫描
+FetchStage --> RecordStore : 获取记录
+RecordStore --> RecordCursor : 记录游标
+RecordStore --> SeekableRecordCursor : 可定位游标
+IndexCursor --> SortedDataInterface : 排序数据接口
+
+' 目录访问连接
+QueryPlanner --> CollectionCatalog : 获取集合信息
+QueryPlanner --> IndexCatalog : 获取索引信息
+IndexSelection --> IndexDescriptor : 索引描述
+Collection --> IndexCatalog : 包含索引
+IndexCatalog --> IndexDescriptor : 索引描述
+
+' 查询优化器连接
+QueryPlanner --> ABTOptimizer : 使用优化器
+ABTOptimizer --> CostModel : 成本模型
+ABTOptimizer --> LogicalRewriter : 逻辑重写
+ABTOptimizer --> PhysicalRewriter : 物理重写
+
+' 注释
+note right of QueryPlanner
+  查询规划器是查询处理的核心
+  负责生成最优的执行计划
+  考虑索引选择和成本估算
+end note
+
+note right of SlotBasedExecutor
+  SBE是新一代查询执行引擎
+  基于槽位的执行模型
+  提供更好的性能和扩展性
+end note
+
+note bottom of Pipeline
+  聚合框架支持复杂的数据处理
+  通过管道阶段组合实现
+  支持分布式执行
+end note
+
+note bottom of IndexAccessMethod
+  索引访问方法抽象了不同类型的索引
+  包括B树、全文、地理空间等
+  提供统一的访问接口
+end note
+
+@enduml

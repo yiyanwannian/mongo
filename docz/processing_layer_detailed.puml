@@ -1,0 +1,237 @@
+@startuml MongoDB Processing Layer Detailed Architecture
+!theme plain
+title MongoDB 处理层详细架构图
+
+' 定义颜色样式
+skinparam package {
+    BackgroundColor LightBlue
+    BorderColor DarkBlue
+}
+
+skinparam component {
+    BackgroundColor LightYellow
+    BorderColor Orange
+}
+
+skinparam interface {
+    BackgroundColor LightGreen
+    BorderColor DarkGreen
+}
+
+skinparam class {
+    BackgroundColor LightCyan
+    BorderColor DarkCyan
+}
+
+' 查询入口层
+package "查询入口层 (Query Entry Layer)" #LightCyan {
+    component "FindCommand\n(src/mongo/db/commands/query_cmd/find_cmd.cpp)" as FindCmd #LightGreen
+    component "AggregateCommand\n(src/mongo/db/commands/query_cmd/pipeline_command.cpp)" as AggCmd #LightGreen
+    component "CountCommand\n(src/mongo/db/commands/query_cmd/count_cmd.cpp)" as CountCmd #LightGreen
+    component "DistinctCommand\n(src/mongo/db/commands/query_cmd/distinct_cmd.cpp)" as DistinctCmd #LightGreen
+}
+
+' 查询解析层
+package "查询解析层 (Query Parsing Layer)" #LightYellow {
+    component "QueryRequest\n(src/mongo/db/query/query_request.h)" as QueryRequest #Wheat
+    component "CanonicalQuery\n(src/mongo/db/query/canonical_query.h)" as CanonicalQuery #Wheat
+    component "MatchExpression\n(src/mongo/db/matcher/expression.h)" as MatchExpression #Wheat
+    component "Projection\n(src/mongo/db/query/projection.h)" as Projection #Wheat
+    component "ParsedSort\n(src/mongo/db/query/sort_pattern.h)" as ParsedSort #Wheat
+    component "ExpressionContext\n(src/mongo/db/pipeline/expression_context.h)" as ExpressionContext #Wheat
+}
+
+' 查询规划层
+package "查询规划层 (Query Planning Layer)" #LightYellow {
+    component "QueryPlanner\n(src/mongo/db/query/query_planner.h)" as QueryPlanner #LightSalmon
+    component "IndexSelection\n(src/mongo/db/query/planner/index_selection.h)" as IndexSelection #LightSalmon
+    component "PlanEnumerator\n(src/mongo/db/query/planner/plan_enumerator.h)" as PlanEnumerator #LightSalmon
+    component "QuerySolution\n(src/mongo/db/query/query_solution.h)" as QuerySolution #LightSalmon
+    component "PlanCache\n(src/mongo/db/query/plan_cache.h)" as PlanCache #LightSalmon
+    component "PlanRanker\n(src/mongo/db/query/plan_ranker.h)" as PlanRanker #LightSalmon
+}
+
+' 聚合框架层
+package "聚合框架层 (Aggregation Framework Layer)" #LightYellow {
+    component "Pipeline\n(src/mongo/db/pipeline/pipeline.h)" as Pipeline #LightPink
+    component "DocumentSource\n(src/mongo/db/pipeline/document_source.h)" as DocumentSource #LightPink
+    
+    package "聚合阶段 (Aggregation Stages)" #MistyRose {
+        component "DocumentSourceMatch\n(document_source_match.h)" as DSMatch #MistyRose
+        component "DocumentSourceProject\n(document_source_project.h)" as DSProject #MistyRose
+        component "DocumentSourceGroup\n(document_source_group.h)" as DSGroup #MistyRose
+        component "DocumentSourceSort\n(document_source_sort.h)" as DSSort #MistyRose
+        component "DocumentSourceLimit\n(document_source_limit.h)" as DSLimit #MistyRose
+        component "DocumentSourceLookup\n(document_source_lookup.h)" as DSLookup #MistyRose
+        component "DocumentSourceUnwind\n(document_source_unwind.h)" as DSUnwind #MistyRose
+    }
+    
+    component "Expression\n(src/mongo/db/pipeline/expression.h)" as Expression #LightPink
+    component "Accumulator\n(src/mongo/db/pipeline/accumulator.h)" as Accumulator #LightPink
+}
+
+' 查询执行层
+package "查询执行层 (Query Execution Layer)" #LightYellow {
+    interface "PlanExecutor\n(src/mongo/db/query/plan_executor.h)" as PlanExecutor
+    
+    package "经典执行引擎 (Classic Engine)" #LightGreen {
+        component "PlanExecutorImpl\n(plan_executor_impl.h)" as PlanExecutorImpl #LightGreen
+        component "PlanStage\n(src/mongo/db/exec/plan_stage.h)" as PlanStage #LightGreen
+        
+        package "执行阶段 (Execution Stages)" #Honeydew {
+            component "CollectionScan\n(collection_scan.h)" as CollectionScan #Honeydew
+            component "IndexScan\n(index_scan.h)" as IndexScan #Honeydew
+            component "FetchStage\n(fetch.h)" as FetchStage #Honeydew
+            component "SortStage\n(sort.h)" as SortStage #Honeydew
+            component "LimitSkipStage\n(limit.h)" as LimitSkipStage #Honeydew
+            component "ProjectionStage\n(projection.h)" as ProjectionStage #Honeydew
+            component "AndHashStage\n(and_hash.h)" as AndHashStage #Honeydew
+            component "OrStage\n(or.h)" as OrStage #Honeydew
+        }
+        
+        component "WorkingSet\n(src/mongo/db/exec/working_set.h)" as WorkingSet #LightGreen
+        component "PlanYieldPolicy\n(src/mongo/db/query/plan_yield_policy.h)" as PlanYieldPolicy #LightGreen
+    }
+    
+    package "SBE执行引擎 (SBE Engine)" #LightSteelBlue {
+        component "PlanExecutorSBE\n(plan_executor_sbe.h)" as PlanExecutorSBE #LightSteelBlue
+        component "SBEPlanStage\n(src/mongo/db/exec/sbe/stages/stage.h)" as SBEPlanStage #LightSteelBlue
+        
+        package "SBE执行阶段 (SBE Stages)" #AliceBlue {
+            component "ScanStage\n(scan.h)" as SBEScan #AliceBlue
+            component "IndexScanStage\n(ix_scan.h)" as SBEIndexScan #AliceBlue
+            component "FilterStage\n(filter.h)" as SBEFilter #AliceBlue
+            component "ProjectStage\n(project.h)" as SBEProject #AliceBlue
+            component "SortStage\n(sort.h)" as SBESort #AliceBlue
+            component "LimitSkipStage\n(limit_skip.h)" as SBELimitSkip #AliceBlue
+            component "HashAggStage\n(hash_agg.h)" as SBEHashAgg #AliceBlue
+            component "HashJoinStage\n(hash_join.h)" as SBEHashJoin #AliceBlue
+        }
+        
+        component "SlotAccessor\n(src/mongo/db/exec/sbe/values/slot.h)" as SlotAccessor #LightSteelBlue
+        component "ValueAccessor\n(src/mongo/db/exec/sbe/values/value.h)" as ValueAccessor #LightSteelBlue
+    }
+    
+    package "聚合执行器 (Aggregation Executor)" #LightCoral {
+        component "PlanExecutorPipeline\n(plan_executor_pipeline.h)" as PlanExecutorPipeline #LightCoral
+        component "ExecPipeline\n(src/mongo/db/exec/agg/exec_pipeline.h)" as ExecPipeline #LightCoral
+        component "PipelineBuilder\n(src/mongo/db/exec/agg/pipeline_builder.h)" as PipelineBuilder #LightCoral
+    }
+}
+
+' 查询优化器
+package "查询优化器 (Query Optimizer)" #LightGoldenRodYellow {
+    component "ABTOptimizer\n(src/mongo/db/query/optimizer/)" as ABTOptimizer #LightGoldenRodYellow
+    component "CostModel\n(src/mongo/db/query/optimizer/)" as CostModel #LightGoldenRodYellow
+    component "LogicalRewriter\n(src/mongo/db/query/optimizer/)" as LogicalRewriter #LightGoldenRodYellow
+    component "PhysicalRewriter\n(src/mongo/db/query/optimizer/)" as PhysicalRewriter #LightGoldenRodYellow
+    component "CardinalityEstimator\n(src/mongo/db/query/ce/)" as CardinalityEstimator #LightGoldenRodYellow
+}
+
+' 连接关系 - 查询入口到解析
+FindCmd --> QueryRequest : 创建请求
+AggCmd --> Pipeline : 创建管道
+CountCmd --> QueryRequest : 创建请求
+DistinctCmd --> QueryRequest : 创建请求
+
+' 查询解析内部连接
+QueryRequest --> CanonicalQuery : 规范化
+CanonicalQuery --> MatchExpression : 过滤条件
+CanonicalQuery --> Projection : 投影
+CanonicalQuery --> ParsedSort : 排序
+Pipeline --> ExpressionContext : 表达式上下文
+
+' 查询规划连接
+CanonicalQuery --> QueryPlanner : 输入
+QueryPlanner --> IndexSelection : 索引选择
+QueryPlanner --> PlanEnumerator : 计划枚举
+QueryPlanner --> QuerySolution : 生成方案
+QueryPlanner --> PlanCache : 缓存查询
+QuerySolution --> PlanRanker : 计划排序
+
+' 聚合框架连接
+Pipeline --> DocumentSource : 包含阶段
+DocumentSource <|-- DSMatch : 继承
+DocumentSource <|-- DSProject : 继承
+DocumentSource <|-- DSGroup : 继承
+DocumentSource <|-- DSSort : 继承
+DocumentSource <|-- DSLimit : 继承
+DocumentSource <|-- DSLookup : 继承
+DocumentSource <|-- DSUnwind : 继承
+
+DSProject --> Expression : 使用表达式
+DSGroup --> Accumulator : 使用累加器
+
+' 查询执行连接 - 经典引擎
+QuerySolution --> PlanExecutorImpl : 创建执行器
+PlanExecutorImpl --> PlanStage : 执行阶段
+PlanStage <|-- CollectionScan : 继承
+PlanStage <|-- IndexScan : 继承
+PlanStage <|-- FetchStage : 继承
+PlanStage <|-- SortStage : 继承
+PlanStage <|-- LimitSkipStage : 继承
+PlanStage <|-- ProjectionStage : 继承
+PlanStage <|-- AndHashStage : 继承
+PlanStage <|-- OrStage : 继承
+
+PlanExecutorImpl --> WorkingSet : 使用工作集
+PlanExecutorImpl --> PlanYieldPolicy : 让出策略
+
+' 查询执行连接 - SBE引擎
+QuerySolution --> PlanExecutorSBE : 创建SBE执行器
+PlanExecutorSBE --> SBEPlanStage : SBE阶段
+SBEPlanStage <|-- SBEScan : 继承
+SBEPlanStage <|-- SBEIndexScan : 继承
+SBEPlanStage <|-- SBEFilter : 继承
+SBEPlanStage <|-- SBEProject : 继承
+SBEPlanStage <|-- SBESort : 继承
+SBEPlanStage <|-- SBELimitSkip : 继承
+SBEPlanStage <|-- SBEHashAgg : 继承
+SBEPlanStage <|-- SBEHashJoin : 继承
+
+SBEPlanStage --> SlotAccessor : 槽位访问
+SlotAccessor --> ValueAccessor : 值访问
+
+' 聚合执行连接
+Pipeline --> PlanExecutorPipeline : 创建聚合执行器
+PlanExecutorPipeline --> ExecPipeline : 执行管道
+ExecPipeline --> PipelineBuilder : 构建管道
+
+' 查询优化器连接
+QueryPlanner --> ABTOptimizer : 使用优化器
+ABTOptimizer --> CostModel : 成本模型
+ABTOptimizer --> LogicalRewriter : 逻辑重写
+ABTOptimizer --> PhysicalRewriter : 物理重写
+ABTOptimizer --> CardinalityEstimator : 基数估算
+
+' 执行器统一接口
+PlanExecutor <|-- PlanExecutorImpl : 实现
+PlanExecutor <|-- PlanExecutorSBE : 实现
+PlanExecutor <|-- PlanExecutorPipeline : 实现
+
+' 注释
+note right of QueryPlanner
+  查询规划器是查询处理的核心
+  负责生成最优的执行计划
+  支持基于成本的优化
+end note
+
+note right of SBEPlanStage
+  SBE是新一代查询执行引擎
+  基于槽位的执行模型
+  提供更好的性能和扩展性
+end note
+
+note bottom of Pipeline
+  聚合框架支持复杂的数据处理
+  通过管道阶段组合实现
+  支持分布式执行和优化
+end note
+
+note bottom of ABTOptimizer
+  ABT优化器是下一代查询优化器
+  基于代数表示和成本模型
+  支持更复杂的优化策略
+end note
+
+@enduml

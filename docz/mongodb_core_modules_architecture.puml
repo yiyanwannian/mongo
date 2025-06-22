@@ -1,0 +1,164 @@
+@startuml MongoDB核心模块架构图
+title MongoDB 核心模块架构与实现
+
+' mongos路由器层
+package "mongos 路由器" as RouterLayer #LightBlue {
+    component "服务入口点\n(ServiceEntryPointRouterRole)" as RouterEntry
+    component "路由策略\n(Strategy::clientCommand)" as RouterStrategy
+    component "查询路由\n(CollectionRoutingInfoTargeter)" as QueryRouter
+    component "路由角色管理\n(RouterRole)" as RoleManager
+    
+    RouterEntry --> RouterStrategy : 请求处理
+    RouterStrategy --> QueryRouter : 查询路由
+    QueryRouter --> RoleManager : 角色管理
+    
+    note right of RouterEntry
+        **设计思路**:
+        - 无状态设计
+        - 缓存路由信息
+        - 错误重试机制
+        - 水平扩展支持
+    end note
+}
+
+' 配置服务器集群
+package "配置服务器集群" as ConfigLayer #LightYellow {
+    component "分片目录管理器\n(ShardingCatalogManager)" as CatalogMgr
+    component "分片初始化\n(ShardingInitializationMongoD)" as ShardInit
+    component "元数据管理\n(DatabaseOperations)" as MetadataMgr
+
+    database "配置数据库" as ConfigDB {
+        [分片信息] as ShardInfo
+        [集合配置] as CollectionConfig
+        [数据块信息] as ChunkInfo
+    }
+    
+    CatalogMgr --> MetadataMgr : 管理元数据
+    ShardInit --> CatalogMgr : 初始化分片
+    MetadataMgr --> ConfigDB : 存储配置
+    
+    note right of CatalogMgr
+        **设计思路**:
+        - 复制集架构
+        - 事务支持
+        - 版本控制
+        - 高可用性
+    end note
+}
+
+' WiredTiger存储引擎
+package "WiredTiger 存储引擎" as StorageLayer #LightGreen {
+    component "存储引擎工厂\n(WiredTigerFactory)" as StorageFactory
+    component "记录存储\n(WiredTigerRecordStore)" as RecordStore
+    component "索引实现\n(WiredTigerIndex)" as IndexImpl
+    component "恢复单元\n(WiredTigerRecoveryUnit)" as RecoveryUnit
+    component "事务管理\n(TransactionManager)" as TxnMgr
+    
+    StorageFactory --> RecordStore : 创建记录存储
+    StorageFactory --> IndexImpl : 创建索引
+    RecordStore --> RecoveryUnit : 使用恢复单元
+    IndexImpl --> RecoveryUnit : 使用恢复单元
+    RecoveryUnit --> TxnMgr : 事务处理
+    
+    database "物理存储" as PhysicalStorage {
+        [数据文件(.wt)] as DataFiles
+        [索引文件(.wt)] as IndexFiles
+        [事务日志] as TxnLog
+        [检查点] as Checkpoint
+    }
+    
+    RecordStore --> DataFiles : 存储数据
+    IndexImpl --> IndexFiles : 存储索引
+    TxnMgr --> TxnLog : 记录事务
+    TxnMgr --> Checkpoint : 创建检查点
+    
+    note right of StorageFactory
+        **设计思路**:
+        - MVCC多版本控制
+        - 文档级并发
+        - 数据压缩
+        - 检查点机制
+    end note
+}
+
+' 性能优化特性
+package "性能优化特性" as PerfLayer #LightCyan {
+    component "查询计划缓存\n(PlanCache)" as PlanCache
+    component "索引访问优化\n(IndexAccessMethod)" as IndexAccess
+    component "缓存管理\n(CacheManager)" as CacheMgr
+    component "预读机制\n(Prefetch)" as Prefetch
+    
+    PlanCache --> IndexAccess : 优化索引访问
+    IndexAccess --> CacheMgr : 管理缓存
+    CacheMgr --> Prefetch : 预读数据
+    
+    note right of PlanCache
+        **设计思路**:
+        - 计划缓存复用
+        - 智能索引选择
+        - 动态内存管理
+        - 预测性读取
+    end note
+}
+
+' 分片集群
+package "分片集群" as ShardLayer #Wheat {
+    component "分片键管理\n(ShardKeyPattern)" as ShardKey
+    component "初始分片策略\n(InitialSplitPolicy)" as SplitPolicy
+    component "负载均衡器\n(Balancer)" as Balancer
+    component "数据迁移\n(MigrationSourceManager)" as Migration
+    
+    ShardKey --> SplitPolicy : 创建初始分片
+    SplitPolicy --> Balancer : 负载均衡
+    Balancer --> Migration : 数据迁移
+    
+    note right of ShardKey
+        **设计思路**:
+        - 哈希/范围分片
+        - 自动负载均衡
+        - 版本控制
+        - 无缝迁移
+    end note
+}
+
+' mongod内部架构
+package "mongod 内部架构" as MongodLayer #LightPink {
+    component "主入口\n(mongod_main)" as MongodMain
+    component "服务初始化\n(ServiceInitialization)" as ServiceInit
+    component "服务入口点\n(ServiceEntryPoint)" as ServiceEntry
+    component "存储引擎集成\n(StorageEngineInterface)" as StorageIntegration
+    
+    MongodMain --> ServiceInit : 初始化服务
+    ServiceInit --> ServiceEntry : 创建入口点
+    ServiceEntry --> StorageIntegration : 集成存储引擎
+    
+    note right of MongodMain
+        **设计思路**:
+        - 分层架构
+        - 模块化设计
+        - 异步处理
+        - 插件架构
+    end note
+}
+
+' 模块间交互关系
+RouterLayer --> ConfigLayer : 获取路由信息
+RouterLayer --> ShardLayer : 路由到分片
+ConfigLayer --> ShardLayer : 管理分片配置
+ShardLayer --> MongodLayer : 分片服务器
+MongodLayer --> StorageLayer : 存储数据
+MongodLayer --> PerfLayer : 性能优化
+StorageLayer --> PerfLayer : 缓存优化
+
+' 数据流向
+RouterEntry ..> QueryRouter : 查询请求
+QueryRouter ..> ShardKey : 解析分片键
+ShardKey ..> RecordStore : 访问数据
+RecordStore ..> PlanCache : 缓存计划
+
+' 控制流向
+CatalogMgr ..> Balancer : 触发均衡
+Balancer ..> Migration : 执行迁移
+Migration ..> StorageIntegration : 数据传输
+
+@enduml

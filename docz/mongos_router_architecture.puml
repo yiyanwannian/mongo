@@ -1,0 +1,196 @@
+@startuml mongos路由器架构图
+title mongos 路由器模块架构与实现
+
+!define ROUTER_COLOR #E1F5FE
+!define CACHE_COLOR #F3E5F5
+!define NETWORK_COLOR #E8F5E8
+!define PROCESS_COLOR #FFF3E0
+
+' 客户端层
+package "客户端层" as ClientLayer #FFFDE7 {
+    [MongoDB Driver] as Driver
+    [应用程序] as App
+    App --> Driver : 数据库操作
+}
+
+' mongos路由器核心
+package "mongos 路由器核心" as RouterCore ROUTER_COLOR {
+    
+    ' 服务入口点
+    component "服务入口点" as ServiceEntry #81C784 {
+        [ServiceEntryPointRouterRole] as EntryPoint
+        [handleRequest()] as HandleReq
+        [handleRequestImpl()] as HandleImpl
+        
+        EntryPoint --> HandleReq : 验证集群角色
+        HandleReq --> HandleImpl : 委托处理
+    }
+    
+    ' Grid分片集群抽象
+    component "分片集群抽象" as GridComponent #64B5F6 {
+        [Grid] as GridCore
+        [init()] as GridInit
+        [isInitialized()] as GridCheck
+        
+        GridCore --> GridInit : 初始化组件
+        GridCore --> GridCheck : 状态检查
+    }
+    
+    ' 路由决策引擎
+    component "路由决策引擎" as RoutingEngine #FFB74D {
+        [CollectionRoutingInfoTargeter] as Targeter
+        [_targetQuery()] as TargetQuery
+        [_targetShardKey()] as TargetShard
+        [targetInsert()] as TargetInsert
+        
+        Targeter --> TargetQuery : 查询路由
+        Targeter --> TargetShard : 分片键路由
+        Targeter --> TargetInsert : 插入路由
+    }
+    
+    ' 路由角色管理
+    component "路由角色管理" as RouterRole #BA68C8 {
+        [DBPrimaryRouter] as DBRouter
+        [CollectionRouter] as CollRouter
+        [route()] as RouteMethod
+        
+        DBRouter --> RouteMethod : DDL操作路由
+        CollRouter --> RouteMethod : CRUD操作路由
+    }
+}
+
+' 缓存与注册表层
+package "缓存与注册表层" as CacheLayer CACHE_COLOR {
+    
+    component "目录缓存" as CatalogCache #CE93D8 {
+        [CatalogCache] as Cache
+        [getCollectionRoutingInfo()] as GetRouting
+        [invalidate()] as InvalidateCache
+        
+        Cache --> GetRouting : 获取路由信息
+        Cache --> InvalidateCache : 缓存失效
+    }
+    
+    component "分片注册表" as ShardRegistry #9575CD {
+        [ShardRegistry] as Registry
+        [getShard()] as GetShard
+        [_lookup()] as LookupShard
+        [reload()] as ReloadRegistry
+        
+        Registry --> GetShard : 异步获取分片
+        Registry --> LookupShard : 查找分片
+        Registry --> ReloadRegistry : 重新加载
+    }
+    
+    component "集群游标管理" as CursorManager #7986CB {
+        [ClusterCursorManager] as CursorMgr
+        [registerCursor()] as RegCursor
+        [killCursor()] as KillCursor
+        
+        CursorMgr --> RegCursor : 注册游标
+        CursorMgr --> KillCursor : 清理游标
+    }
+}
+
+' 网络通信层
+package "网络通信层" as NetworkLayer NETWORK_COLOR {
+    
+    component "任务执行器池" as ExecutorPool #A5D6A7 {
+        [TaskExecutorPool] as ExecPool
+        [getExecutor()] as GetExec
+        [schedule()] as Schedule
+        
+        ExecPool --> GetExec : 获取执行器
+        ExecPool --> Schedule : 调度任务
+    }
+    
+    component "网络接口" as NetworkInterface #81C784 {
+        [NetworkInterface] as NetInterface
+        [startCommand()] as StartCmd
+        [cancelCommand()] as CancelCmd
+        
+        NetInterface --> StartCmd : 启动网络命令
+        NetInterface --> CancelCmd : 取消命令
+    }
+    
+    component "分片连接" as ShardConnection #66BB6A {
+        [Shard] as ShardConn
+        [runCommand()] as RunCmd
+        [runExhaustCommand()] as RunExhaust
+        
+        ShardConn --> RunCmd : 执行命令
+        ShardConn --> RunExhaust : 执行流式命令
+    }
+}
+
+' 配置服务器接口
+package "配置服务器接口" as ConfigInterface #FFF8E1 {
+    component "目录客户端" as CatalogClient #FFCC02 {
+        [ShardingCatalogClient] as CatClient
+        [getDatabase()] as GetDB
+        [getCollection()] as GetColl
+        [getAllShards()] as GetShards
+        
+        CatClient --> GetDB : 获取数据库信息
+        CatClient --> GetColl : 获取集合信息
+        CatClient --> GetShards : 获取分片列表
+    }
+}
+
+' 外部分片服务器
+package "分片服务器集群" as ShardCluster #E8F5E8 {
+    database "Shard 0" as Shard0 #4CAF50
+    database "Shard 1" as Shard1 #4CAF50
+    database "Shard N" as ShardN #4CAF50
+    
+    note right of Shard0
+        **分片服务器**:
+        - mongod实例
+        - 存储数据分片
+        - 执行本地查询
+        - 返回结果集
+    end note
+}
+
+' 连接关系
+Driver --> EntryPoint : 客户端请求
+
+' 核心组件间连接
+EntryPoint --> GridCore : 获取Grid实例
+GridCore --> Targeter : 路由决策
+GridCore --> Cache : 获取缓存信息
+GridCore --> Registry : 获取分片连接
+GridCore --> CursorMgr : 管理游标
+
+' 路由决策流程
+Targeter --> Cache : 查询路由信息
+Targeter --> Registry : 获取目标分片
+RouterRole --> Targeter : 委托路由决策
+
+' 缓存与注册表
+Cache --> CatClient : 缓存未命中时查询
+Registry --> ExecPool : 异步执行
+Registry --> NetInterface : 网络通信
+
+' 网络通信
+ExecPool --> NetInterface : 网络任务调度
+NetInterface --> ShardConn : 建立分片连接
+ShardConn --> Shard0 : 分片0连接
+ShardConn --> Shard1 : 分片1连接
+ShardConn --> ShardN : 分片N连接
+
+' 配置服务器通信
+CatClient --> ConfigInterface : 元数据查询
+
+' 数据流向
+EntryPoint ..> Targeter : 请求路由
+Targeter ..> Registry : 分片查找
+Registry ..> ShardConn : 命令执行
+ShardConn ..> Shard0 : 数据访问
+
+' 控制流向
+GridCore ..> Cache : 缓存管理
+Cache ..> CatClient : 元数据同步
+Registry ..> ExecPool : 任务调度
+
+@enduml

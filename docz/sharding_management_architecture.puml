@@ -1,0 +1,318 @@
+@startuml 分片管理架构图
+title 分片管理模块架构与实现
+
+!define SHARD_COLOR #E8F5E8
+!define BALANCE_COLOR #E3F2FD
+!define MIGRATION_COLOR #F3E5F5
+!define POLICY_COLOR #FFF3E0
+
+' 分片键管理层
+package "分片键管理层" as ShardKeyLayer SHARD_COLOR {
+    
+    component "分片键模式" as ShardKeyPattern #4CAF50 {
+        [ShardKeyPattern] as SKPattern
+        [extractShardKeyFromDoc()] as ExtractKey
+        [isHashedPatternEl()] as IsHashed
+        [getKeyPattern()] as GetPattern
+        
+        SKPattern --> ExtractKey : 提取分片键
+        SKPattern --> IsHashed : 检查哈希模式
+        SKPattern --> GetPattern : 获取键模式
+        
+        note right of SKPattern
+            **分片键类型**:
+            - 范围分片键
+            - 哈希分片键
+            - 复合分片键
+            - 时间序列分片键
+        end note
+    }
+    
+    component "分片键验证" as ShardKeyValidation #388E3C {
+        [isValidShardKeyElementForExtractionFromDocument()] as ValidateElement
+        [validateShardKeyPattern()] as ValidatePattern
+        [checkShardKeySize()] as CheckSize
+        
+        ValidateElement --> ValidatePattern : 模式验证
+        ValidatePattern --> CheckSize : 大小检查
+    }
+    
+    component "分片键工具" as ShardKeyUtils #2E7D32 {
+        [BSONElementHasher] as Hasher
+        [extractKeyElementFromDoc()] as ExtractElement
+        [compareShardKeys()] as CompareKeys
+        
+        Hasher --> ExtractElement : 哈希计算
+        ExtractElement --> CompareKeys : 键比较
+    }
+}
+
+' 初始分片策略层
+package "初始分片策略层" as InitialSplitLayer POLICY_COLOR {
+    
+    component "分片策略基类" as SplitPolicyBase #FF9800 {
+        [InitialSplitPolicy] as BasePolicy
+        [createFirstChunks()] as CreateChunks
+        [createFirstSplitPoints()] as CreateSplits
+        
+        BasePolicy --> CreateChunks : 创建数据块
+        BasePolicy --> CreateSplits : 创建分割点
+    }
+    
+    component "单块策略" as SingleChunkPolicy #F57C00 {
+        [SingleChunkOnShardSplitPolicy] as SinglePolicy
+        [createFirstChunks()] as SingleCreate
+        
+        SinglePolicy --> SingleCreate : 单块创建
+        SinglePolicy --> BasePolicy : 继承基类
+    }
+    
+    component "预分割策略" as SplitPointsPolicy #EF6C00 {
+        [SplitPointsBasedSplitPolicy] as SplitPolicy
+        [calculateHashedSplitPoints()] as CalcSplits
+        [generateShardCollectionInitialChunks()] as GenChunks
+        
+        SplitPolicy --> CalcSplits : 计算分割点
+        SplitPolicy --> GenChunks : 生成初始块
+        SplitPolicy --> BasePolicy : 继承基类
+    }
+    
+    component "采样策略" as SamplingPolicy #E65100 {
+        [SamplingBasedSplitPolicy] as SamplePolicy
+        [sampleCollection()] as SampleColl
+        [findSplitPoints()] as FindSplits
+        
+        SamplePolicy --> SampleColl : 采样集合
+        SamplePolicy --> FindSplits : 查找分割点
+        SamplePolicy --> BasePolicy : 继承基类
+    }
+}
+
+' 负载均衡层
+package "负载均衡层" as BalancerLayer BALANCE_COLOR {
+    
+    component "负载均衡器" as BalancerCore #2196F3 {
+        [Balancer] as BalancerMain
+        [_mainThread()] as MainThread
+        [_doBalanceRound()] as BalanceRound
+        [_onActionsStreamPolicyStateUpdate()] as StateUpdate
+        
+        BalancerMain --> MainThread : 主线程
+        MainThread --> BalanceRound : 均衡轮次
+        BalanceRound --> StateUpdate : 状态更新
+        
+        note right of BalancerMain
+            **均衡功能**:
+            - 集群状态监控
+            - 数据块选择
+            - 迁移调度
+            - 碎片整理
+        end note
+    }
+    
+    component "数据块选择策略" as ChunkSelectionPolicy #1976D2 {
+        [BalancerChunkSelectionPolicy] as ChunkPolicy
+        [selectChunksToMove()] as SelectChunks
+        [_getMigrationCandidates()] as GetCandidates
+        
+        ChunkPolicy --> SelectChunks : 选择数据块
+        SelectChunks --> GetCandidates : 获取候选块
+    }
+    
+    component "命令调度器" as CommandScheduler #1565C0 {
+        [BalancerCommandsScheduler] as CmdScheduler
+        [requestMoveChunk()] as RequestMove
+        [requestMergeChunks()] as RequestMerge
+        [requestSplitChunk()] as RequestSplit
+        
+        CmdScheduler --> RequestMove : 请求迁移
+        CmdScheduler --> RequestMerge : 请求合并
+        CmdScheduler --> RequestSplit : 请求分割
+    }
+    
+    component "集群统计" as ClusterStats #0D47A1 {
+        [ClusterStatistics] as ClusterStat
+        [getStats()] as GetStats
+        [getShardStats()] as GetShardStats
+        
+        ClusterStat --> GetStats : 获取统计
+        ClusterStat --> GetShardStats : 获取分片统计
+    }
+}
+
+' 数据迁移层
+package "数据迁移层" as MigrationLayer MIGRATION_COLOR {
+    
+    component "迁移源管理" as MigrationSource #BA68C8 {
+        [MigrationSourceManager] as SourceMgr
+        [enterCriticalSection()] as EnterCritical
+        [commitChunkOnRecipient()] as CommitChunk
+        [commitChunkMetadataOnConfig()] as CommitMetadata
+        
+        SourceMgr --> EnterCritical : 进入关键区
+        EnterCritical --> CommitChunk : 提交到接收方
+        CommitChunk --> CommitMetadata : 提交元数据
+        
+        note right of SourceMgr
+            **迁移状态**:
+            - Created: 已创建
+            - Cloning: 克隆中
+            - CriticalSection: 关键区
+            - Done: 完成
+        end note
+    }
+    
+    component "迁移目标管理" as MigrationDest #9C27B0 {
+        [MigrationDestinationManager] as DestMgr
+        [start()] as StartMigration
+        [_migrateThread()] as MigrateThread
+        [_sessionMigrationThread()] as SessionThread
+        
+        DestMgr --> StartMigration : 开始迁移
+        StartMigration --> MigrateThread : 迁移线程
+        StartMigration --> SessionThread : 会话迁移线程
+    }
+    
+    component "数据克隆器" as ChunkCloner #8E24AA {
+        [MigrationChunkClonerSource] as ClonerSource
+        [startClone()] as StartClone
+        [nextCloneBatch()] as NextBatch
+        [nextModsBatch()] as NextMods
+        
+        ClonerSource --> StartClone : 开始克隆
+        StartClone --> NextBatch : 下一批数据
+        NextBatch --> NextMods : 下一批修改
+    }
+    
+    component "会话迁移" as SessionMigration #7B1FA2 {
+        [SessionCatalogMigrationSource] as SessionSource
+        [getLastFetchedOplog()] as GetLastOplog
+        [fetchNextOplog()] as FetchNextOplog
+        
+        SessionSource --> GetLastOplog : 获取最后操作日志
+        GetLastOplog --> FetchNextOplog : 获取下一操作日志
+    }
+}
+
+' 策略管理层
+package "策略管理层" as PolicyLayer #FCE4EC {
+    
+    component "碎片整理策略" as DefragmentationPolicy #E91E63 {
+        [BalancerDefragmentationPolicy] as DefragPolicy
+        [getNextStreamingAction()] as GetNextAction
+        [applyActionResult()] as ApplyResult
+        
+        DefragPolicy --> GetNextAction : 获取下一动作
+        GetNextAction --> ApplyResult : 应用结果
+    }
+    
+    component "自动合并策略" as AutoMergerPolicy #C2185B {
+        [AutoMergerPolicy] as MergerPolicy
+        [getNextStreamingAction()] as GetMergeAction
+        [enable()] as EnableMerger
+        [disable()] as DisableMerger
+        
+        MergerPolicy --> GetMergeAction : 获取合并动作
+        MergerPolicy --> EnableMerger : 启用合并
+        MergerPolicy --> DisableMerger : 禁用合并
+    }
+    
+    component "未分片数据移动策略" as MoveUnshardedPolicy #AD1457 {
+        [MoveUnshardedPolicy] as MovePolicy
+        [getNextStreamingAction()] as GetMoveAction
+        [selectUnshardedCollectionsToMove()] as SelectUnsharded
+        
+        MovePolicy --> GetMoveAction : 获取移动动作
+        MovePolicy --> SelectUnsharded : 选择未分片集合
+    }
+}
+
+' 配置管理层
+package "配置管理层" as ConfigLayer #E1F5FE {
+    
+    component "均衡器配置" as BalancerConfig #03A9F4 {
+        [BalancerConfiguration] as BalanceConfig
+        [shouldBalance()] as ShouldBalance
+        [getBalancerMode()] as GetMode
+        [refreshAndCheck()] as RefreshCheck
+        
+        BalanceConfig --> ShouldBalance : 是否均衡
+        BalanceConfig --> GetMode : 获取模式
+        BalanceConfig --> RefreshCheck : 刷新检查
+    }
+    
+    component "分片配置" as ShardConfig #0288D1 {
+        [ShardingConfiguration] as ShardingConfig
+        [getShardIds()] as GetShardIds
+        [getShardConnectionString()] as GetConnStr
+        
+        ShardingConfig --> GetShardIds : 获取分片ID
+        ShardingConfig --> GetConnStr : 获取连接字符串
+    }
+}
+
+' 外部接口
+package "外部接口" as ExternalInterface #FFFDE7 {
+    [配置服务器] as ConfigServer
+    [分片服务器] as ShardServers
+    [mongos路由器] as MongosRouter
+    [管理命令] as AdminCommands
+    
+    note right of ConfigServer
+        **配置服务器功能**:
+        - 存储分片元数据
+        - 协调数据迁移
+        - 管理数据块信息
+    end note
+}
+
+' 连接关系
+
+' 外部接口连接
+ConfigServer --> BalancerMain : 均衡器控制
+ShardServers --> SourceMgr : 迁移源
+ShardServers --> DestMgr : 迁移目标
+MongosRouter --> SKPattern : 分片键解析
+AdminCommands --> BalanceConfig : 配置管理
+
+' 分片键管理连接
+SKPattern --> ShardKeyValidation : 键验证
+SKPattern --> ShardKeyUtils : 工具函数
+ExtractKey --> Hasher : 哈希计算
+
+' 初始分片策略连接
+BasePolicy --> SinglePolicy : 策略实现
+BasePolicy --> SplitPolicy : 策略实现
+BasePolicy --> SamplePolicy : 策略实现
+CreateChunks --> SKPattern : 使用分片键
+
+' 负载均衡连接
+BalancerMain --> ChunkPolicy : 数据块选择
+BalancerMain --> CmdScheduler : 命令调度
+BalancerMain --> ClusterStat : 集群统计
+BalancerMain --> DefragPolicy : 碎片整理
+BalancerMain --> MergerPolicy : 自动合并
+BalancerMain --> MovePolicy : 未分片移动
+
+' 数据迁移连接
+CmdScheduler --> SourceMgr : 启动迁移
+SourceMgr --> DestMgr : 协调迁移
+SourceMgr --> ClonerSource : 数据克隆
+DestMgr --> SessionSource : 会话迁移
+
+' 配置管理连接
+BalancerMain --> BalanceConfig : 均衡配置
+ChunkPolicy --> ShardingConfig : 分片配置
+
+' 数据流向
+SKPattern ..> CreateChunks : 分片键信息
+ChunkPolicy ..> CmdScheduler : 迁移请求
+ClonerSource ..> DestMgr : 数据传输
+SourceMgr ..> ConfigServer : 元数据更新
+
+' 控制流向
+BalancerMain ..> DefragPolicy : 策略控制
+DefragPolicy ..> MergerPolicy : 策略协调
+MergerPolicy ..> MovePolicy : 策略链
+
+@enduml

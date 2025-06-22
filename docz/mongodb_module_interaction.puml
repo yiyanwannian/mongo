@@ -1,0 +1,242 @@
+@startuml MongoDB Module Interaction Architecture
+!theme plain
+title MongoDB 模块交互架构图
+
+' 定义颜色样式
+skinparam package {
+    BackgroundColor LightBlue
+    BorderColor DarkBlue
+    FontColor Black
+}
+
+skinparam component {
+    BackgroundColor LightYellow
+    BorderColor Orange
+    FontColor Black
+}
+
+skinparam interface {
+    BackgroundColor LightGreen
+    BorderColor DarkGreen
+    FontColor Black
+}
+
+skinparam database {
+    BackgroundColor LightPink
+    BorderColor DarkRed
+    FontColor Black
+}
+
+' 应用层
+package "应用层 (Application Layer)" #LightCyan {
+    component "MongoDB Shell\n(src/mongo/shell/)" as Shell #LightGreen
+    component "客户端应用\n(External)" as ClientApp #LightGreen
+}
+
+' 服务入口层
+package "服务入口层 (Service Entry Layer)" #LightBlue {
+    component "mongod服务器\n(src/mongo/db/mongod.cpp)" as Mongod #LightSalmon
+    component "mongos路由器\n(src/mongo/s/mongos.cpp)" as Mongos #LightCyan
+    
+    interface "服务上下文\n(src/mongo/db/service_context.h)" as ServiceContext
+    interface "操作上下文\n(src/mongo/db/operation_context.h)" as OpContext
+}
+
+' 命令处理层
+package "命令处理层 (Command Processing Layer)" #LightGreen {
+    component "命令系统\n(src/mongo/db/commands/)" as Commands #Wheat
+    component "查询命令\n(src/mongo/db/commands/query_cmd/)" as QueryCommands #Wheat
+    component "分片命令\n(src/mongo/s/commands/)" as ShardCommands #Wheat
+}
+
+' 查询处理层
+package "查询处理层 (Query Processing Layer)" #LightYellow {
+    component "查询解析器\n(src/mongo/db/query/)" as QueryParser #LightGoldenRodYellow
+    component "查询规划器\n(src/mongo/db/query/planner/)" as QueryPlanner #LightGoldenRodYellow
+    component "查询执行引擎\n(src/mongo/db/exec/)" as QueryExecutor #LightGoldenRodYellow
+    component "SBE执行引擎\n(src/mongo/db/exec/sbe/)" as SBEEngine #LightGoldenRodYellow
+    component "聚合框架\n(src/mongo/db/pipeline/)" as AggFramework #LightGoldenRodYellow
+}
+
+' 分片路由层
+package "分片路由层 (Sharding Router Layer)" #LightSteelBlue {
+    component "路由角色\n(src/mongo/s/router_role.h)" as RouterRole #LightSteelBlue
+    component "集群网格\n(src/mongo/s/grid.h)" as Grid #LightSteelBlue
+    component "分片注册表\n(src/mongo/s/shard_registry.h)" as ShardRegistry #LightSteelBlue
+    component "路由信息缓存\n(src/mongo/s/routing_information_cache.h)" as RoutingCache #LightSteelBlue
+    component "异步结果合并\n(src/mongo/s/query/async_results_merger.h)" as ResultsMerger #LightSteelBlue
+}
+
+' 数据管理层
+package "数据管理层 (Data Management Layer)" #LightPink {
+    component "目录管理\n(src/mongo/db/catalog/)" as Catalog #MistyRose
+    component "集合目录\n(src/mongo/db/catalog/collection_catalog.h)" as CollectionCatalog #MistyRose
+    component "索引系统\n(src/mongo/db/index/)" as IndexSystem #MistyRose
+    component "索引构建\n(src/mongo/db/index_builds/)" as IndexBuilds #MistyRose
+}
+
+' 复制和分片层
+package "复制和分片层 (Replication & Sharding Layer)" #LightCoral {
+    component "复制协调器\n(src/mongo/db/repl/replication_coordinator.h)" as ReplCoordinator #LightCoral
+    component "Oplog管理\n(src/mongo/db/repl/oplog.h)" as OplogManager #LightCoral
+    component "分片状态\n(src/mongo/db/s/sharding_state.h)" as ShardingState #LightCoral
+    component "块管理器\n(src/mongo/db/s/chunk_manager.h)" as ChunkManager #LightCoral
+}
+
+' 存储引擎层
+package "存储引擎层 (Storage Engine Layer)" #LightGray {
+    interface "存储引擎接口\n(src/mongo/db/storage/storage_engine.h)" as StorageEngineInterface
+    component "存储引擎实现\n(src/mongo/db/storage/storage_engine_impl.h)" as StorageEngineImpl #LightGray
+    interface "记录存储接口\n(src/mongo/db/storage/record_store.h)" as RecordStoreInterface
+    interface "排序数据接口\n(src/mongo/db/storage/sorted_data_interface.h)" as SortedDataInterface
+    component "KV引擎\n(src/mongo/db/storage/kv/)" as KVEngine #LightGray
+}
+
+' WiredTiger存储引擎
+package "WiredTiger存储引擎 (WiredTiger Storage Engine)" #Wheat {
+    database "WiredTiger引擎\n(src/third_party/wiredtiger/)" as WiredTiger #Wheat
+    database "数据文件\n(.wt files)" as DataFiles #Wheat
+    database "索引文件\n(.wt files)" as IndexFiles #Wheat
+    database "事务日志\n(WiredTigerLog.*)" as TxnLog #Wheat
+}
+
+' 网络传输层
+package "网络传输层 (Transport Layer)" #LightSeaGreen {
+    component "传输层\n(src/mongo/transport/)" as Transport #LightSeaGreen
+    component "会话管理\n(src/mongo/transport/session.h)" as SessionManager #LightSeaGreen
+    component "ASIO实现\n(src/mongo/transport/asio/)" as ASIO #LightSeaGreen
+    component "gRPC支持\n(src/mongo/transport/grpc/)" as GRPC #LightSeaGreen
+}
+
+' 客户端连接层
+package "客户端连接层 (Client Connection Layer)" #LightGreen {
+    component "数据库客户端\n(src/mongo/client/dbclient_base.h)" as DBClient #LightGreen
+    component "连接管理\n(src/mongo/client/dbclient_connection.h)" as ConnectionManager #LightGreen
+    component "复制集客户端\n(src/mongo/client/dbclient_rs.h)" as ReplicaSetClient #LightGreen
+}
+
+' 认证授权层
+package "认证授权层 (Authentication & Authorization Layer)" #Lavender {
+    component "认证管理器\n(src/mongo/db/auth/authorization_manager.h)" as AuthManager #Lavender
+    component "认证会话\n(src/mongo/db/auth/authorization_session.h)" as AuthSession #Lavender
+    component "权限检查\n(src/mongo/db/auth/auth_checks.h)" as AuthChecks #Lavender
+}
+
+' 基础设施层
+package "基础设施层 (Infrastructure Layer)" #LightYellow {
+    component "基础工具\n(src/mongo/base/)" as Base #LightYellow
+    component "BSON格式\n(src/mongo/bson/)" as BSON #LightYellow
+    component "工具库\n(src/mongo/util/)" as Util #LightYellow
+    component "加密模块\n(src/mongo/crypto/)" as Crypto #LightYellow
+    component "脚本引擎\n(src/mongo/scripting/)" as Scripting #LightYellow
+}
+
+' 连接关系 - 应用层到服务层
+Shell --> Transport : 网络连接
+ClientApp --> Transport : 网络连接
+
+' 服务入口层内部连接
+Mongod --> ServiceContext : 使用
+Mongos --> ServiceContext : 使用
+ServiceContext --> OpContext : 创建
+
+' 服务层到命令层
+Mongod --> Commands : 处理命令
+Mongos --> ShardCommands : 处理分片命令
+Commands --> QueryCommands : 查询命令
+
+' 命令层到查询处理层
+QueryCommands --> QueryParser : 解析查询
+QueryParser --> QueryPlanner : 生成计划
+QueryPlanner --> QueryExecutor : 执行查询
+QueryPlanner --> SBEEngine : SBE执行
+QueryCommands --> AggFramework : 聚合处理
+
+' 分片路由层连接
+Mongos --> RouterRole : 路由角色
+RouterRole --> Grid : 集群管理
+Grid --> ShardRegistry : 分片注册
+Grid --> RoutingCache : 路由缓存
+ShardCommands --> ResultsMerger : 结果合并
+
+' 查询处理到数据管理
+QueryExecutor --> Catalog : 访问元数据
+QueryExecutor --> IndexSystem : 使用索引
+AggFramework --> Catalog : 访问元数据
+SBEEngine --> StorageEngineInterface : 存储访问
+
+' 数据管理层内部连接
+Catalog --> CollectionCatalog : 集合管理
+IndexSystem --> IndexBuilds : 索引构建
+
+' 复制和分片层连接
+Mongod --> ReplCoordinator : 复制管理
+ReplCoordinator --> OplogManager : Oplog管理
+Mongod --> ShardingState : 分片状态
+ShardingState --> ChunkManager : 块管理
+
+' 存储引擎层连接
+QueryExecutor --> StorageEngineInterface : 查询存储
+Catalog --> StorageEngineInterface : 元数据存储
+IndexSystem --> SortedDataInterface : 索引存储
+StorageEngineInterface <|-- StorageEngineImpl : 实现
+StorageEngineImpl --> RecordStoreInterface : 记录存储
+StorageEngineImpl --> SortedDataInterface : 索引存储
+StorageEngineImpl --> KVEngine : KV存储
+
+' WiredTiger连接
+KVEngine --> WiredTiger : 使用引擎
+WiredTiger --> DataFiles : 数据文件
+WiredTiger --> IndexFiles : 索引文件
+WiredTiger --> TxnLog : 事务日志
+
+' 网络层连接
+Transport --> SessionManager : 会话管理
+Transport --> ASIO : 异步IO
+Transport --> GRPC : gRPC支持
+Transport --> DBClient : 客户端连接
+
+' 客户端连接层
+DBClient --> ConnectionManager : 连接管理
+DBClient --> ReplicaSetClient : 复制集连接
+
+' 认证授权层连接
+Commands --> AuthManager : 权限管理
+Mongod --> AuthSession : 认证会话
+Commands --> AuthChecks : 权限检查
+
+' 基础设施层连接
+QueryExecutor --> BSON : BSON处理
+StorageEngineImpl --> BSON : 数据格式
+Commands --> BSON : 命令格式
+Transport --> Base : 基础工具
+StorageEngineImpl --> Util : 工具库
+AuthManager --> Crypto : 加密功能
+Commands --> Scripting : 脚本执行
+
+' 注释
+note right of Mongod
+  mongod是数据库服务器的主入口
+  负责处理所有数据库操作
+  包括查询、写入、索引等
+end note
+
+note right of Mongos
+  mongos是分片集群的路由器
+  负责将请求路由到正确的分片
+  无状态设计，可水平扩展
+end note
+
+note bottom of WiredTiger
+  WiredTiger是默认存储引擎
+  提供文档级并发控制
+  支持压缩和事务
+end note
+
+note bottom of BSON
+  BSON是MongoDB的核心数据格式
+  所有数据都以BSON格式存储
+  支持丰富的数据类型
+end note
+
+@enduml

@@ -329,5 +329,20 @@ graph TB
     WTEngine --> WTTxn
     WTEngine --> WTLog
 ```
+```text
+应用层: shell, tools
+    ↓
+命令层: commands, query_cmd
+    ↓
+处理层: query, pipeline, exec
+    ↓
+管理层: catalog, index, repl, sharding
+    ↓
+存储层: storage, wiredtiger
+    ↓
+传输层: transport, client
+    ↓
+基础层: base, bson, util, crypto
+```
 
 这些架构图展示了MongoDB的分布式特性和内部组件结构，包括分片、复制、路由和存储等核心概念的实现。

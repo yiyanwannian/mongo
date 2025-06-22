@@ -1,0 +1,247 @@
+@startuml 配置服务器架构图
+title 配置服务器模块架构与实现
+
+!define CONFIG_COLOR #FFF3E0
+!define CATALOG_COLOR #E8F5E8
+!define DATABASE_COLOR #E3F2FD
+!define REPL_COLOR #FCE4EC
+
+' 配置服务器集群
+package "配置服务器集群" as ConfigCluster #FFF8E1 {
+    
+    ' 主配置服务器
+    component "主配置服务器" as PrimaryConfig CONFIG_COLOR {
+        [ShardingCatalogManager] as CatalogMgr
+        [ShardingInitializationMongoD] as ShardInit
+        [ReplicationCoordinator] as ReplCoord
+        
+        CatalogMgr --> ShardInit : 初始化管理
+        ShardInit --> ReplCoord : 复制协调
+        
+        note right of CatalogMgr
+            **核心职责**:
+            - 分片管理
+            - 数据库操作
+            - 集合配置
+            - 数据块管理
+        end note
+    }
+    
+    ' 从配置服务器
+    component "从配置服务器1" as SecondaryConfig1 CONFIG_COLOR {
+        [Secondary Replica] as Sec1
+        [OplogReader] as OplogR1
+        
+        Sec1 --> OplogR1 : 读取操作日志
+    }
+    
+    component "从配置服务器2" as SecondaryConfig2 CONFIG_COLOR {
+        [Secondary Replica] as Sec2
+        [OplogReader] as OplogR2
+        
+        Sec2 --> OplogR2 : 读取操作日志
+    }
+    
+    ' 复制关系
+    PrimaryConfig --> SecondaryConfig1 : 主从复制
+    PrimaryConfig --> SecondaryConfig2 : 主从复制
+    SecondaryConfig1 --> PrimaryConfig : 心跳检测
+    SecondaryConfig2 --> PrimaryConfig : 心跳检测
+}
+
+' 目录管理层
+package "目录管理层" as CatalogLayer CATALOG_COLOR {
+    
+    component "分片目录管理" as ShardCatalog #A5D6A7 {
+        [addShard()] as AddShard
+        [removeShard()] as RemoveShard
+        [updateShardHost()] as UpdateShard
+        
+        AddShard --> UpdateShard : 分片操作
+        RemoveShard --> UpdateShard : 分片操作
+    }
+    
+    component "数据库管理" as DatabaseMgmt #81C784 {
+        [createDatabase()] as CreateDB
+        [dropDatabase()] as DropDB
+        [commitCreateDatabase()] as CommitDB
+        
+        CreateDB --> CommitDB : 事务提交
+        DropDB --> CommitDB : 事务提交
+    }
+    
+    component "集合管理" as CollectionMgmt #66BB6A {
+        [shardCollection()] as ShardColl
+        [dropCollection()] as DropColl
+        [refineCollectionShardKey()] as RefineKey
+        
+        ShardColl --> RefineKey : 分片键优化
+        DropColl --> ShardColl : 集合操作
+    }
+    
+    component "数据块管理" as ChunkMgmt #4CAF50 {
+        [commitChunkSplit()] as SplitChunk
+        [commitChunkMerge()] as MergeChunk
+        [commitChunkMigration()] as MigrateChunk
+        
+        SplitChunk --> MergeChunk : 块操作
+        MergeChunk --> MigrateChunk : 块操作
+    }
+}
+
+' 配置数据库
+package "配置数据库 (config)" as ConfigDatabase DATABASE_COLOR {
+    
+    database "核心集合" as CoreCollections #2196F3 {
+        [config.shards] as ShardsCollection
+        [config.databases] as DatabasesCollection
+        [config.collections] as CollectionsCollection
+        [config.chunks] as ChunksCollection
+        [config.tags] as TagsCollection
+        
+        note right of ShardsCollection
+            **分片信息**:
+            - 分片ID和连接字符串
+            - 分片状态和拓扑时间
+            - 分片标签和区域信息
+        end note
+        
+        note right of ChunksCollection
+            **数据块信息**:
+            - 块的范围和所属分片
+            - 块的版本和历史记录
+            - 块的大小和统计信息
+        end note
+    }
+    
+    database "辅助集合" as AuxCollections #1976D2 {
+        [config.changelog] as ChangeLog
+        [config.locks] as LocksCollection
+        [config.mongos] as MongosCollection
+        [config.version] as VersionCollection
+        
+        note right of ChangeLog
+            **变更日志**:
+            - 记录所有配置变更
+            - 用于审计和调试
+            - 支持变更回滚
+        end note
+    }
+}
+
+' 事务处理层
+package "事务处理层" as TransactionLayer #F3E5F5 {
+    
+    component "事务管理器" as TransactionMgr #BA68C8 {
+        [TransactionClient] as TxnClient
+        [TransactionCoordinator] as TxnCoord
+        [WriteUnitOfWork] as WriteUnit
+        
+        TxnClient --> TxnCoord : 事务协调
+        TxnCoord --> WriteUnit : 写操作单元
+    }
+    
+    component "版本控制" as VersionControl #9C27B0 {
+        [CollectionVersion] as CollVer
+        [DatabaseVersion] as DBVer
+        [ShardVersion] as ShardVer
+        [TopologyTime] as TopoTime
+        
+        CollVer --> DBVer : 版本层次
+        DBVer --> ShardVer : 版本层次
+        ShardVer --> TopoTime : 拓扑时间
+    }
+    
+    component "锁管理" as LockManager #8E24AA {
+        [DistributedLock] as DistLock
+        [DDLLockManager] as DDLLock
+        [ResourceMutex] as ResMutex
+        
+        DistLock --> DDLLock : DDL锁
+        DDLLock --> ResMutex : 资源互斥
+    }
+}
+
+' 缓存同步层
+package "缓存同步层" as CacheLayer #E1F5FE {
+    
+    component "路由信息缓存" as RoutingCache #03A9F4 {
+        [RoutingInformationCache] as RouteCache
+        [purgeDatabase()] as PurgeDB
+        [invalidateShardOrEntireRoutingTable()] as InvalidateRoute
+        
+        RouteCache --> PurgeDB : 缓存清理
+        RouteCache --> InvalidateRoute : 缓存失效
+    }
+    
+    component "目录缓存" as CatalogCache #0288D1 {
+        [CatalogCache] as CatCache
+        [getDatabase()] as GetDBCache
+        [getCollection()] as GetCollCache
+        
+        CatCache --> GetDBCache : 数据库缓存
+        CatCache --> GetCollCache : 集合缓存
+    }
+}
+
+' 外部接口
+package "外部接口" as ExternalInterface #E8F5E8 {
+    [mongos路由器] as MongosRouter
+    [分片服务器] as ShardServers
+    [管理工具] as AdminTools
+    
+    note right of MongosRouter
+        **路由器访问**:
+        - 获取路由信息
+        - 监听配置变更
+        - 缓存元数据
+    end note
+}
+
+' 连接关系
+
+' 外部接口到配置服务器
+MongosRouter --> PrimaryConfig : 元数据查询
+ShardServers --> PrimaryConfig : 状态报告
+AdminTools --> PrimaryConfig : 管理操作
+
+' 配置服务器到目录管理
+CatalogMgr --> ShardCatalog : 分片管理
+CatalogMgr --> DatabaseMgmt : 数据库管理
+CatalogMgr --> CollectionMgmt : 集合管理
+CatalogMgr --> ChunkMgmt : 数据块管理
+
+' 目录管理到数据库
+ShardCatalog --> ShardsCollection : 分片信息存储
+DatabaseMgmt --> DatabasesCollection : 数据库信息存储
+CollectionMgmt --> CollectionsCollection : 集合信息存储
+ChunkMgmt --> ChunksCollection : 数据块信息存储
+
+' 事务处理
+CatalogMgr --> TransactionMgr : 事务操作
+TransactionMgr --> CoreCollections : 事务写入
+VersionControl --> CoreCollections : 版本更新
+LockManager --> TransactionMgr : 锁协调
+
+' 缓存同步
+PrimaryConfig --> RoutingCache : 缓存管理
+RoutingCache --> CatalogCache : 缓存层次
+CatalogCache --> MongosRouter : 缓存推送
+
+' 辅助功能
+DatabaseMgmt --> ChangeLog : 记录变更
+ChunkMgmt --> ChangeLog : 记录变更
+LockManager --> LocksCollection : 锁状态
+PrimaryConfig --> MongosCollection : mongos注册
+
+' 数据流向
+CatalogMgr ..> CoreCollections : 元数据写入
+CoreCollections ..> CatalogCache : 数据读取
+CatalogCache ..> MongosRouter : 缓存同步
+
+' 控制流向
+ShardInit ..> TransactionMgr : 初始化事务
+TransactionMgr ..> VersionControl : 版本控制
+VersionControl ..> RoutingCache : 缓存失效
+
+@enduml

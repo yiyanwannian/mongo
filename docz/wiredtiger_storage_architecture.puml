@@ -1,0 +1,290 @@
+@startuml WiredTiger存储引擎架构图
+title WiredTiger 存储引擎模块架构与实现
+
+!define STORAGE_COLOR #E8F5E8
+!define ENGINE_COLOR #E3F2FD
+!define TRANSACTION_COLOR #F3E5F5
+!define DATA_COLOR #FFF3E0
+
+' MongoDB 存储层接口
+package "MongoDB 存储层接口" as MongoInterface #FFFDE7 {
+    [StorageEngine] as StorageEngineInterface
+    [RecordStore] as RecordStoreInterface
+    [SortedDataInterface] as IndexInterface
+    [RecoveryUnit] as RecoveryUnitInterface
+    
+    note right of StorageEngineInterface
+        **存储引擎抽象**:
+        - 统一的存储接口
+        - 支持多种存储引擎
+        - 插件化架构
+    end note
+}
+
+' WiredTiger 核心引擎
+package "WiredTiger 核心引擎" as WTCore ENGINE_COLOR {
+    
+    component "KV 引擎" as KVEngine #2196F3 {
+        [WiredTigerKVEngine] as WTKVEngine
+        [WiredTigerKVEngineBase] as WTKVBase
+        [SpillWiredTigerKVEngine] as SpillEngine
+        
+        WTKVEngine --> WTKVBase : 继承基类
+        SpillEngine --> WTKVBase : 溢出引擎
+        
+        note right of WTKVEngine
+            **主要功能**:
+            - 连接管理
+            - 表创建和删除
+            - 检查点协调
+            - 恢复单元创建
+        end note
+    }
+    
+    component "连接管理" as ConnectionMgmt #1976D2 {
+        [WiredTigerConnection] as WTConnection
+        [WiredTigerSessionCache] as SessionCache
+        [WiredTigerSession] as WTSession
+        
+        WTConnection --> SessionCache : 会话缓存
+        SessionCache --> WTSession : 会话池
+    }
+    
+    component "配置管理" as ConfigMgmt #1565C0 {
+        [WiredTigerConfig] as WTConfig
+        [WiredTigerUtil] as WTUtil
+        [WiredTigerEventHandler] as EventHandler
+        
+        WTConfig --> WTUtil : 工具函数
+        WTConfig --> EventHandler : 事件处理
+    }
+}
+
+' 记录存储层
+package "记录存储层" as RecordStoreLayer STORAGE_COLOR {
+    
+    component "记录存储实现" as RecordStoreImpl #4CAF50 {
+        [WiredTigerRecordStore] as WTRecordStore
+        [WiredTigerRecordStore::Capped] as CappedStore
+        [WiredTigerRecordStore::Oplog] as OplogStore
+        
+        WTRecordStore --> CappedStore : 固定集合
+        WTRecordStore --> OplogStore : 操作日志
+        
+        note right of WTRecordStore
+            **存储特性**:
+            - 文档级并发
+            - 数据压缩
+            - 批量操作
+            - 大小跟踪
+        end note
+    }
+    
+    component "游标实现" as CursorImpl #388E3C {
+        [WiredTigerCursor] as WTCursor
+        [WiredTigerRecordStoreCursor] as RecordCursor
+        [WiredTigerRecordStoreStandardCursor] as StandardCursor
+        
+        WTCursor --> RecordCursor : 记录游标
+        RecordCursor --> StandardCursor : 标准游标
+    }
+    
+    component "大小管理" as SizeManager #2E7D32 {
+        [WiredTigerSizeStorer] as SizeStorer
+        [SizeStorerSyncTracker] as SyncTracker
+        
+        SizeStorer --> SyncTracker : 同步跟踪
+    }
+}
+
+' 索引层
+package "索引层" as IndexLayer #E1F5FE {
+    
+    component "索引实现" as IndexImpl #03A9F4 {
+        [WiredTigerIndex] as WTIndex
+        [WiredTigerIndexStandard] as StandardIndex
+        [WiredTigerIndexUnique] as UniqueIndex
+        
+        WTIndex --> StandardIndex : 标准索引
+        WTIndex --> UniqueIndex : 唯一索引
+        
+        note right of WTIndex
+            **索引特性**:
+            - B+树结构
+            - 键字符串编码
+            - 唯一性约束
+            - 部分索引支持
+        end note
+    }
+    
+    component "索引游标" as IndexCursor #0288D1 {
+        [WiredTigerIndexCursor] as WTIndexCursor
+        [WiredTigerIndexCursorGeneric] as GenericCursor
+        
+        WTIndexCursor --> GenericCursor : 通用游标
+    }
+    
+    component "批量构建" as BulkBuilder #0277BD {
+        [WiredTigerBulkBuilder] as BulkBuilder2
+        [WiredTigerIndexBulkBuilder] as IndexBulkBuilder
+        
+        BulkBuilder2 --> IndexBulkBuilder : 索引批量构建
+    }
+}
+
+' 事务管理层
+package "事务管理层" as TransactionLayer TRANSACTION_COLOR {
+    
+    component "恢复单元" as RecoveryUnitImpl #BA68C8 {
+        [WiredTigerRecoveryUnit] as WTRecoveryUnit
+        [WiredTigerSnapshot] as WTSnapshot
+        [WiredTigerBeginTxnBlock] as BeginTxnBlock
+        
+        WTRecoveryUnit --> WTSnapshot : 快照管理
+        WTRecoveryUnit --> BeginTxnBlock : 事务块
+        
+        note right of WTRecoveryUnit
+            **事务功能**:
+            - MVCC支持
+            - 快照隔离
+            - 时间戳管理
+            - 两阶段提交
+        end note
+    }
+    
+    component "事务状态" as TransactionState #9C27B0 {
+        [TransactionState] as TxnState
+        [PreparedTransaction] as PreparedTxn
+        [CommittedTransaction] as CommittedTxn
+        
+        TxnState --> PreparedTxn : 预提交事务
+        TxnState --> CommittedTxn : 已提交事务
+    }
+    
+    component "时间戳管理" as TimestampMgmt #8E24AA {
+        [TimestampManager] as TsMgr
+        [OplogTimestamp] as OplogTs
+        [CommitTimestamp] as CommitTs
+        
+        TsMgr --> OplogTs : 操作日志时间戳
+        TsMgr --> CommitTs : 提交时间戳
+    }
+}
+
+' 物理存储层
+package "物理存储层" as PhysicalStorage DATA_COLOR {
+    
+    database "数据文件" as DataFiles #FF9800 {
+        [WiredTiger.wt] as MetadataFile
+        [collection-*.wt] as CollectionFiles
+        [index-*.wt] as IndexFiles
+        [sizeStorer.wt] as SizeStorerFile
+        
+        note right of MetadataFile
+            **文件类型**:
+            - 元数据文件
+            - 集合数据文件
+            - 索引数据文件
+            - 大小存储文件
+        end note
+    }
+    
+    database "事务日志" as TransactionLog #F57C00 {
+        [WiredTigerLog.*] as LogFiles
+        [WiredTigerPreplog.*] as PrepLogFiles
+        [journal/] as JournalDir
+        
+        LogFiles --> JournalDir : 日志目录
+        PrepLogFiles --> JournalDir : 预提交日志
+    }
+    
+    database "检查点" as Checkpoint #EF6C00 {
+        [CheckpointManager] as CkptMgr
+        [CheckpointThread] as CkptThread
+        [CheckpointData] as CkptData
+        
+        CkptMgr --> CkptThread : 检查点线程
+        CkptThread --> CkptData : 检查点数据
+    }
+}
+
+' 性能优化层
+package "性能优化层" as PerformanceLayer #F3E5F5 {
+    
+    component "缓存管理" as CacheManager #E91E63 {
+        [WiredTigerCache] as WTCache
+        [EvictionManager] as EvictionMgr
+        [CachePressureManager] as PressureMgr
+        
+        WTCache --> EvictionMgr : 淘汰管理
+        WTCache --> PressureMgr : 压力管理
+    }
+    
+    component "压缩管理" as CompressionMgmt #C2185B {
+        [CompressionOptions] as CompressOpts
+        [SnappyCompressor] as SnappyComp
+        [ZlibCompressor] as ZlibComp
+        [ZstdCompressor] as ZstdComp
+        
+        CompressOpts --> SnappyComp : Snappy压缩
+        CompressOpts --> ZlibComp : Zlib压缩
+        CompressOpts --> ZstdComp : Zstd压缩
+    }
+    
+    component "预读机制" as PrefetchMgmt #AD1457 {
+        [PrefetchManager] as PrefetchMgr
+        [ReadAheadCache] as ReadAheadCache
+        
+        PrefetchMgr --> ReadAheadCache : 预读缓存
+    }
+}
+
+' 连接关系
+
+' 接口层到实现层
+StorageEngineInterface --> WTKVEngine : 实现接口
+RecordStoreInterface --> WTRecordStore : 实现接口
+IndexInterface --> WTIndex : 实现接口
+RecoveryUnitInterface --> WTRecoveryUnit : 实现接口
+
+' 核心引擎内部连接
+WTKVEngine --> WTConnection : 使用连接
+WTKVEngine --> WTConfig : 使用配置
+WTConnection --> SessionCache : 管理会话
+
+' 存储层连接
+WTKVEngine --> WTRecordStore : 创建记录存储
+WTKVEngine --> WTIndex : 创建索引
+WTRecordStore --> WTCursor : 使用游标
+WTRecordStore --> SizeStorer : 大小跟踪
+
+' 事务层连接
+WTKVEngine --> WTRecoveryUnit : 创建恢复单元
+WTRecoveryUnit --> WTSession : 使用会话
+WTRecoveryUnit --> TxnState : 管理事务状态
+WTRecoveryUnit --> TsMgr : 时间戳管理
+
+' 物理存储连接
+WTRecordStore --> CollectionFiles : 数据存储
+WTIndex --> IndexFiles : 索引存储
+WTRecoveryUnit --> LogFiles : 事务日志
+WTKVEngine --> CkptMgr : 检查点管理
+
+' 性能优化连接
+WTKVEngine --> WTCache : 缓存管理
+WTRecordStore --> CompressOpts : 数据压缩
+WTIndex --> CompressOpts : 索引压缩
+WTCursor --> PrefetchMgr : 预读优化
+
+' 数据流向
+WTRecordStore ..> CollectionFiles : 数据写入
+WTIndex ..> IndexFiles : 索引写入
+WTRecoveryUnit ..> LogFiles : 日志写入
+CkptMgr ..> DataFiles : 检查点创建
+
+' 控制流向
+WTKVEngine ..> CkptThread : 触发检查点
+EvictionMgr ..> WTCache : 缓存淘汰
+PressureMgr ..> EvictionMgr : 压力控制
+
+@enduml

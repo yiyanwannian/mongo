@@ -1,0 +1,373 @@
+@startuml MongoDB项目简化架构图
+title MongoDB 数据库项目架构 - 简化配色版本
+
+' 简化配色方案
+!define LIGHT_BLUE #E8F4FD
+!define LIGHT_GREEN #E8F5E8
+!define LIGHT_ORANGE #FFF8E1
+!define LIGHT_PURPLE #F3E5F5
+!define LIGHT_GRAY #F8F9FA
+
+' ================================
+' 客户端应用层
+' ================================
+package ClientLayer as "客户端应用层" LIGHT_GRAY {
+    
+    component Applications as "应用程序" #FFFFFF {
+        [Web应用] as WebApp
+        [移动应用] as MobileApp
+        [微服务] as Microservices
+        [数据分析工具] as Analytics
+    }
+    
+    component Drivers as "MongoDB驱动程序" #FFFFFF {
+        [Node.js Driver] as NodeDriver
+        [Java Driver] as JavaDriver
+        [Python Driver] as PythonDriver
+        [Go Driver] as GoDriver
+        
+        WebApp --> NodeDriver
+        MobileApp --> JavaDriver
+        Microservices --> GoDriver
+        Analytics --> PythonDriver
+    }
+    
+    component ConnectionMgmt as "连接管理" #FFFFFF {
+        [连接池] as ConnPool
+        [负载均衡] as LoadBalance
+        [故障转移] as Failover
+        [读写分离] as ReadWriteSplit
+        
+        NodeDriver --> ConnPool
+        ConnPool --> LoadBalance
+        LoadBalance --> Failover
+        Failover --> ReadWriteSplit
+    }
+}
+
+' ================================
+' mongos路由器层
+' ================================
+package RouterLayer as "mongos 路由器层" LIGHT_BLUE {
+    
+    component RouterCluster as "路由器集群" #FFFFFF {
+        [mongos 1] as Mongos1
+        [mongos 2] as Mongos2
+        [mongos 3] as Mongos3
+    }
+    
+    component RouterCore as "路由核心组件" #FFFFFF {
+        [ServiceEntryPointRouterRole] as RouterEntry
+        [Grid] as GridMgr
+        [CollectionRoutingInfoTargeter] as Targeter
+        [ShardRegistry] as ShardReg
+        [CatalogCache] as CatCache
+        
+        RouterEntry --> GridMgr
+        GridMgr --> Targeter
+        Targeter --> ShardReg
+        ShardReg --> CatCache
+    }
+    
+    component QueryProcessing as "查询处理" #FFFFFF {
+        [ClusterFind] as ClusterFind
+        [ClusterAggregate] as ClusterAgg
+        [ClusterWrite] as ClusterWrite
+        [AsyncResultsMerger] as ResultMerger
+        
+        Targeter --> ClusterFind
+        Targeter --> ClusterAgg
+        Targeter --> ClusterWrite
+        ClusterFind --> ResultMerger
+    }
+}
+
+' ================================
+' 配置服务器层
+' ================================
+package ConfigLayer as "配置服务器集群" LIGHT_ORANGE {
+    
+    component ConfigReplicaSet as "配置服务器复制集" #FFFFFF {
+        [Config Primary] as ConfigPrimary
+        [Config Secondary 1] as ConfigSec1
+        [Config Secondary 2] as ConfigSec2
+        
+        ConfigPrimary --> ConfigSec1 : 复制
+        ConfigPrimary --> ConfigSec2 : 复制
+    }
+    
+    component ShardingCatalog as "分片目录管理" #FFFFFF {
+        [ShardingCatalogManager] as CatalogMgr
+        [ShardingInitializationMongoD] as ShardInit
+        [DatabaseOperations] as DBOps
+        [CollectionOperations] as CollOps
+        [ChunkOperations] as ChunkOps
+        
+        CatalogMgr --> ShardInit
+        CatalogMgr --> DBOps
+        CatalogMgr --> CollOps
+        CatalogMgr --> ChunkOps
+    }
+    
+    database ConfigDatabase as "配置数据库" #FFFFFF {
+        [config.shards] as ShardsCollection
+        [config.databases] as DatabasesCollection
+        [config.collections] as CollectionsCollection
+        [config.chunks] as ChunksCollection
+        [config.changelog] as ChangelogCollection
+    }
+}
+
+' ================================
+' 分片服务器层
+' ================================
+package ShardLayer as "分片服务器集群" LIGHT_GREEN {
+    
+    component Shard0RS as "分片0复制集" #FFFFFF {
+        [Shard0 Primary] as S0Primary
+        [Shard0 Secondary 1] as S0Sec1
+        [Shard0 Secondary 2] as S0Sec2
+        
+        S0Primary --> S0Sec1 : 复制
+        S0Primary --> S0Sec2 : 复制
+    }
+    
+    component Shard1RS as "分片1复制集" #FFFFFF {
+        [Shard1 Primary] as S1Primary
+        [Shard1 Secondary 1] as S1Sec1
+        [Shard1 Secondary 2] as S1Sec2
+        
+        S1Primary --> S1Sec1 : 复制
+        S1Primary --> S1Sec2 : 复制
+    }
+    
+    component ShardNRS as "分片N复制集" #FFFFFF {
+        [ShardN Primary] as SNPrimary
+        [ShardN Secondary 1] as SNSec1
+        [ShardN Secondary 2] as SNSec2
+        
+        SNPrimary --> SNSec1 : 复制
+        SNPrimary --> SNSec2 : 复制
+    }
+}
+
+' ================================
+' mongod核心架构层
+' ================================
+package MongodLayer as "mongod 核心架构层" LIGHT_PURPLE {
+    
+    component ServiceEntry as "服务入口" #FFFFFF {
+        [ServiceEntryPointShardRole] as ShardEntry
+        [ServiceEntryPointRSEndpoint] as RSEntry
+        [TransportLayer] as Transport
+        [SessionWorkflow] as SessionWF
+        
+        Transport --> SessionWF
+        SessionWF --> ShardEntry
+        SessionWF --> RSEntry
+    }
+    
+    component CommandProcessing as "命令处理" #FFFFFF {
+        [CommandRegistry] as CmdRegistry
+        [BasicCommand] as BasicCmd
+        [WriteCommand] as WriteCmd
+        [ReadCommand] as ReadCmd
+        [AdminCommand] as AdminCmd
+        
+        ShardEntry --> CmdRegistry
+        CmdRegistry --> BasicCmd
+        CmdRegistry --> WriteCmd
+        CmdRegistry --> ReadCmd
+        CmdRegistry --> AdminCmd
+    }
+    
+    component QueryEngine as "查询引擎" #FFFFFF {
+        [QueryPlanner] as Planner
+        [PlanExecutor] as Executor
+        [PlanCache] as PlanCache
+        [IndexCatalog] as IndexCat
+        
+        ReadCmd --> Planner
+        Planner --> Executor
+        Executor --> PlanCache
+        Planner --> IndexCat
+    }
+    
+    component AggregationFramework as "聚合框架" #FFFFFF {
+        [Pipeline] as AggPipeline
+        [DocumentSource] as DocSource
+        [ExpressionContext] as ExprCtx
+        [AccumulatorFactory] as AccumFactory
+        
+        ReadCmd --> AggPipeline
+        AggPipeline --> DocSource
+        DocSource --> ExprCtx
+        ExprCtx --> AccumFactory
+    }
+}
+
+' ================================
+' WiredTiger存储引擎层
+' ================================
+package StorageLayer as "WiredTiger 存储引擎层" LIGHT_PURPLE {
+    
+    component StorageCore as "存储引擎核心" #FFFFFF {
+        [WiredTigerKVEngine] as WTKVEngine
+        [WiredTigerSessionCache] as WTSessionCache
+        [WiredTigerSizeStorer] as WTSizeStorer
+        [WiredTigerOplogManager] as WTOplogMgr
+        
+        WTKVEngine --> WTSessionCache
+        WTKVEngine --> WTSizeStorer
+        WTKVEngine --> WTOplogMgr
+    }
+    
+    component RecordStorage as "记录存储" #FFFFFF {
+        [WiredTigerRecordStore] as WTRecordStore
+        [WiredTigerRecordStore Capped] as WTCapped
+        [WiredTigerRecordStore Oplog] as WTOplog
+        [WiredTigerCursor] as WTCursor
+        
+        WTKVEngine --> WTRecordStore
+        WTRecordStore --> WTCapped
+        WTRecordStore --> WTOplog
+        WTRecordStore --> WTCursor
+    }
+    
+    component IndexStorage as "索引存储" #FFFFFF {
+        [WiredTigerIndex] as WTIndex
+        [WiredTigerIndexStandard] as WTIndexStd
+        [WiredTigerIndexUnique] as WTIndexUniq
+        [WiredTigerIndexCursor] as WTIndexCursor
+        
+        WTKVEngine --> WTIndex
+        WTIndex --> WTIndexStd
+        WTIndex --> WTIndexUniq
+        WTIndex --> WTIndexCursor
+    }
+    
+    component TransactionMgmt as "事务管理" #FFFFFF {
+        [WiredTigerRecoveryUnit] as WTRecoveryUnit
+        [WiredTigerSnapshot] as WTSnapshot
+        [WiredTigerBeginTxnBlock] as WTTxnBlock
+        [TimestampManager] as TsMgr
+        
+        WTKVEngine --> WTRecoveryUnit
+        WTRecoveryUnit --> WTSnapshot
+        WTRecoveryUnit --> WTTxnBlock
+        WTRecoveryUnit --> TsMgr
+    }
+    
+    database PhysicalStorage as "物理存储" #FFFFFF {
+        [WiredTiger.wt] as WTMetadata
+        [collection files] as CollectionFiles
+        [index files] as IndexFiles
+        [WiredTiger logs] as LogFiles
+        [journal] as JournalDir
+    }
+}
+
+' ================================
+' 分片管理层
+' ================================
+package ShardMgmtLayer as "分片管理层" LIGHT_GREEN {
+    
+    component Balancer as "负载均衡器" #FFFFFF {
+        [BalancerChunkSelectionPolicy] as ChunkPolicy
+        [BalancerCommandsScheduler] as CmdScheduler
+        [ClusterStatistics] as ClusterStats
+        [BalancerDefragmentationPolicy] as DefragPolicy
+        
+        ChunkPolicy --> CmdScheduler
+        CmdScheduler --> ClusterStats
+        ClusterStats --> DefragPolicy
+    }
+    
+    component DataMigration as "数据迁移" #FFFFFF {
+        [MigrationSourceManager] as MigrationSrc
+        [MigrationDestinationManager] as MigrationDest
+        [MigrationChunkClonerSource] as ChunkCloner
+        [SessionCatalogMigrationSource] as SessionMigration
+        
+        CmdScheduler --> MigrationSrc
+        MigrationSrc --> MigrationDest
+        MigrationSrc --> ChunkCloner
+        MigrationSrc --> SessionMigration
+    }
+    
+    component ShardKeyMgmt as "分片键管理" #FFFFFF {
+        [ShardKeyPattern] as ShardKeyPattern
+        [InitialSplitPolicy] as SplitPolicy
+        [ShardKeyValidation] as KeyValidation
+        [BSONElementHasher] as Hasher
+        
+        ShardKeyPattern --> SplitPolicy
+        ShardKeyPattern --> KeyValidation
+        ShardKeyPattern --> Hasher
+    }
+}
+
+' ================================
+' 连接关系定义
+' ================================
+
+' 客户端到路由器
+ReadWriteSplit --> Mongos1
+ReadWriteSplit --> Mongos2
+ReadWriteSplit --> Mongos3
+
+' 路由器内部连接
+Mongos1 --> RouterCore
+Mongos2 --> RouterCore
+Mongos3 --> RouterCore
+RouterCore --> QueryProcessing
+
+' 路由器到配置服务器
+CatCache --> ConfigReplicaSet
+ShardReg --> ConfigReplicaSet
+
+' 路由器到分片
+ResultMerger --> Shard0RS
+ResultMerger --> Shard1RS
+ResultMerger --> ShardNRS
+
+' 配置服务器内部
+ConfigPrimary --> ShardingCatalog
+ShardingCatalog --> ConfigDatabase
+
+' 分片服务器内部
+S0Primary --> ServiceEntry
+S1Primary --> ServiceEntry
+SNPrimary --> ServiceEntry
+
+' mongod内部连接
+ServiceEntry --> CommandProcessing
+CommandProcessing --> QueryEngine
+CommandProcessing --> AggregationFramework
+
+' 存储引擎连接
+QueryEngine --> StorageCore
+AggregationFramework --> StorageCore
+StorageCore --> RecordStorage
+StorageCore --> IndexStorage
+StorageCore --> TransactionMgmt
+TransactionMgmt --> PhysicalStorage
+
+' 分片管理连接
+ConfigReplicaSet --> Balancer
+Balancer --> DataMigration
+DataMigration --> Shard0RS
+DataMigration --> Shard1RS
+ShardKeyMgmt --> Balancer
+
+' 数据流向
+Applications ..> QueryProcessing : 查询请求
+QueryProcessing ..> StorageCore : 数据访问
+StorageCore ..> PhysicalStorage : 物理I/O
+DataMigration ..> PhysicalStorage : 数据迁移
+
+' 控制流向
+ConfigDatabase ..> Balancer : 配置信息
+Balancer ..> DataMigration : 迁移控制
+
+@enduml
