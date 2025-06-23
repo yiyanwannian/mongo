@@ -1,359 +1,352 @@
-@startuml MongoDB 完整系统架构图
+@startuml MongoDB 完整架构图
+
 !theme plain
-title MongoDB 完整系统架构图 - 资深架构师视角
+skinparam backgroundColor #FFFFFF
+skinparam componentStyle rectangle
 
-' 定义简化配色方案
-skinparam component {
-    BackgroundColor LightBlue
-    BorderColor DarkBlue
+title MongoDB 完整架构 - 源码实现分析
+
+' 客户端层
+package "客户端层" {
+    [应用程序] as APP
+    [MongoDB 驱动] as DRIVER
+    [MongoDB Shell] as SHELL
+    [MongoDB Compass] as COMPASS
 }
 
-skinparam package {
-    BackgroundColor LightYellow
-    BorderColor Orange
+' 路由层 (mongos)
+package "路由层 - mongos" {
+    component "网络层" {
+        [Transport Layer] as MONGOS_TL
+        [Service Entry Point] as MONGOS_SEP
+    }
+
+    component "路由核心" {
+        [Query Router] as QR
+        [Collection Routing Info Targeter] as CRIT
+        [Shard Targeter] as ST
+        [Cluster Commands Helpers] as CCH
+    }
+
+    component "执行引擎" {
+        [Router Exec Stage] as RES
+        [Cluster Client Cursor] as CCC
+        [Pipeline Merger] as PM
+    }
+
+    component "缓存层" {
+        [Routing Table Cache] as RTC
+        [Shard Registry] as SR
+        [Database Cache] as DC
+    }
 }
 
-skinparam interface {
-    BackgroundColor LightGreen
-    BorderColor DarkGreen
+' 配置服务器集群
+package "配置服务器集群" {
+    component "Config Server Replica Set" {
+        [Config Primary] as CP
+        [Config Secondary 1] as CS1
+        [Config Secondary 2] as CS2
+    }
+
+    component "元数据管理" {
+        [ShardingCatalogManager] as SCM
+        [ConfigServerOpObserver] as CSO
+        [ShardingCatalogClient] as SCC
+    }
+
+    component "元数据存储" {
+        database "config.shards" as SHARDS_DB
+        database "config.collections" as COLLECTIONS_DB
+        database "config.chunks" as CHUNKS_DB
+        database "config.databases" as DATABASES_DB
+        database "config.settings" as SETTINGS_DB
+    }
 }
 
-skinparam database {
-    BackgroundColor LightCyan
-    BorderColor DarkCyan
+' 分片集群
+package "分片集群" {
+    component "Shard 1 Replica Set" {
+        [Shard1 Primary] as S1P
+        [Shard1 Secondary 1] as S1S1
+        [Shard1 Secondary 2] as S1S2
+    }
+
+    component "Shard 2 Replica Set" {
+        [Shard2 Primary] as S2P
+        [Shard2 Secondary 1] as S2S1
+        [Shard2 Secondary 2] as S2S2
+    }
+
+    component "Shard N Replica Set" {
+        [ShardN Primary] as SNP
+        [ShardN Secondary 1] as SNS1
+        [ShardN Secondary 2] as SNS2
+    }
 }
 
-' ================================
-' 客户端接入层
-' ================================
-package "客户端接入层" as ClientLayer #LightGray {
-    [应用程序] as App
-    [MongoDB驱动程序] as Driver
-    [连接池管理器] as ConnPool
-    [负载均衡器] as LoadBalancer
-    
-    App --> Driver
-    Driver --> ConnPool
-    ConnPool --> LoadBalancer
-    
-    note right of Driver : 工厂模式：多语言驱动程序工厂\n策略模式：连接策略选择\n观察者模式：连接状态监控
+' mongod 内部架构
+package "mongod 内部架构" {
+    component "网络传输层" {
+        [Transport Layer Manager] as TLM
+        [Session Manager] as SM
+        [Service Entry Point] as SEP
+    }
+
+    component "服务上下文层" {
+        [Service Context] as SC
+        [Service] as SVC
+        [Client] as CLIENT
+        [Operation Context] as OPCTX
+    }
+
+    component "命令处理层" {
+        [Command Registry] as CR
+        [Command Handlers] as CMD
+        [Command Invocation] as CI
+    }
+
+    component "查询处理层" {
+        [Query Parser] as QP
+        [Query Planner] as QPL
+        [Query Executor] as QE
+        [Aggregation Framework] as AF
+        [Plan Cache] as PC
+    }
+
+    component "存储引擎层" {
+        [Storage Engine Interface] as SEI
+        [Record Store] as RS
+        [Index Manager] as IM
+        [Transaction Manager] as TM
+    }
+
+    component "复制系统" {
+        [Replication Coordinator] as RC
+        [Oplog Manager] as OM
+        [Election Manager] as EM
+        [Sync Source] as SS
+    }
+
+    component "分片系统" {
+        [Sharding State] as SHARD_STATE
+        [Collection Sharding Runtime] as CSR
+        [Migration Manager] as MM
+        [Balancer] as BAL
+    }
 }
 
-' ================================
-' mongos 路由服务层
-' ================================
-package "mongos 路由服务层" as RouterLayer #LightBlue {
-    component "服务入口点" as RouterEntry {
-        [ServiceEntryPointRouterRole] as RouterRole
-        [TransportLayer] as RouterTransport
-        [SessionWorkflow] as RouterSession
+' WiredTiger 存储引擎
+package "WiredTiger 存储引擎" {
+    component "WiredTiger 适配层" {
+        [WiredTigerKVEngine] as WTKE
+        [WiredTigerRecordStore] as WTRS
+        [WiredTigerIndex] as WTI
+        [WiredTigerRecoveryUnit] as WTRU
+        [WiredTigerConnection] as WTC
     }
-    
-    component "查询路由器" as QueryRouter {
-        [Grid] as GridMgr
-        [CollectionRoutingInfoTargeter] as Targeter
-        [ShardKeyPattern] as ShardKey
-        [ChunkManager] as ChunkMgr
+
+    component "WiredTiger 核心层" {
+        [Session Manager] as WT_SM
+        [Transaction Manager] as WT_TM
+        [Cache Manager] as WT_CM
+        [Checkpoint Manager] as WT_CP
+        [B-Tree Engine] as WT_BT
+        [LSM Engine] as WT_LSM
     }
-    
-    component "命令处理器" as RouterCommands {
-        [CommandRegistry] as RouterCmdRegistry
-        [RouterCommand] as RouterCmd
-        [ClusterCommand] as ClusterCmd
+
+    component "物理存储" {
+        database "Data Files (.wt)" as DF
+        database "Index Files (.wt)" as IF
+        database "Log Files" as LF
+        database "Metadata Files" as MF
     }
-    
-    RouterRole --> GridMgr
-    GridMgr --> Targeter
-    Targeter --> ShardKey
-    ShardKey --> ChunkMgr
-    RouterCmdRegistry --> RouterCmd
-    RouterCmdRegistry --> ClusterCmd
-    
-    note right of GridMgr : 单例模式：全局分片网格管理\n策略模式：路由策略选择\n命令模式：分布式命令执行
 }
 
-' ================================
-' 配置服务器层
-' ================================
-package "配置服务器层" as ConfigLayer #LightGreen {
-    component "分片目录管理" as CatalogMgr {
-        [ShardingCatalogManager] as CatalogManager
-        [ConfigServerCatalogCacheLoader] as CacheLoader
-        [ShardRegistry] as ShardRegistry
+' 性能优化特性
+package "性能优化特性" {
+    component "查询优化" {
+        [Query Optimizer] as QO
+        [Index Optimizer] as IO
+        [Cost Estimator] as CE
     }
-    
-    component "负载均衡器" as Balancer {
-        [BalancerConfiguration] as BalancerConfig
-        [MigrationManager] as MigrationMgr
-        [BalancerChunkSelectionPolicy] as ChunkPolicy
+
+    component "执行优化" {
+        [Classic Execution Engine] as CEE
+        [Slot-Based Execution] as SBE
+        [Vectorized Execution] as VE
+        [JIT Compilation] as JIT
     }
-    
-    component "配置复制集" as ConfigReplSet {
-        [ReplicationCoordinator] as ConfigReplCoord
-        [OplogManager] as ConfigOplog
-        [ElectionManager] as ConfigElection
+
+    component "聚合优化" {
+        [Pipeline Optimizer] as PO
+        [Stage Optimizer] as SO
+        [Group Optimizer] as GO
     }
-    
-    CatalogManager --> ShardRegistry
-    CatalogManager --> CacheLoader
-    BalancerConfig --> MigrationMgr
-    MigrationMgr --> ChunkPolicy
-    ConfigReplCoord --> ConfigOplog
-    ConfigReplCoord --> ConfigElection
-    
-    note right of CatalogManager : 观察者模式：配置变更通知\n策略模式：负载均衡策略\n状态模式：复制集状态管理
+
+    component "缓存优化" {
+        [WiredTiger Cache] as WTC_CACHE
+        [Query Cache] as QC
+        [Index Cache] as IC
+        [Metadata Cache] as MC
+    }
 }
 
-' ================================
-' mongod 数据服务层
-' ================================
-package "mongod 数据服务层" as DataLayer #LightCyan {
-    component "服务入口点" as DataEntry {
-        [ServiceEntryPointShardRole] as ShardRole
-        [ServiceEntryPointRSEndpoint] as RSEndpoint
-        [TransportLayer] as DataTransport
-    }
-    
-    component "命令处理系统" as CommandSystem {
-        [CommandRegistry] as CmdRegistry
-        [BasicCommand] as BasicCmd
-        [WriteCommand] as WriteCmd
-        [ReadCommand] as ReadCmd
-        [AdminCommand] as AdminCmd
-    }
-    
-    component "查询处理引擎" as QueryEngine {
-        [QueryPlanner] as Planner
-        [PlanExecutor] as Executor
-        [PlanCache] as PlanCache
-        [IndexAccessMethod] as IndexAccess
-    }
-    
-    component "聚合框架" as AggFramework {
-        [Pipeline] as AggPipeline
-        [DocumentSource] as DocSource
-        [Expression] as AggExpression
-        [Accumulator] as AggAccumulator
-    }
-    
-    ShardRole --> CmdRegistry
-    CmdRegistry --> BasicCmd
-    CmdRegistry --> WriteCmd
-    CmdRegistry --> ReadCmd
-    CmdRegistry --> AdminCmd
-    
-    BasicCmd --> Planner
-    Planner --> Executor
-    Executor --> PlanCache
-    Executor --> IndexAccess
-    
-    AggPipeline --> DocSource
-    DocSource --> AggExpression
-    AggExpression --> AggAccumulator
-    
-    note right of CmdRegistry : 命令模式：数据库命令处理\n策略模式：查询计划选择\n模板方法模式：聚合管道处理
-}
+' 连接关系
+APP --> DRIVER
+DRIVER --> MONGOS_TL
+SHELL --> MONGOS_TL
+COMPASS --> MONGOS_TL
 
-' ================================
-' 复制系统层
-' ================================
-package "复制系统层" as ReplicationLayer #LightPink {
-    component "复制协调器" as ReplCoordinator {
-        [ReplicationCoordinator] as ReplCoord
-        [ReplicationExecutor] as ReplExecutor
-        [TopologyCoordinator] as TopoCoord
-    }
-    
-    component "Oplog管理" as OplogMgmt {
-        [OplogManager] as OplogMgr
-        [OplogApplier] as OplogApplier
-        [OplogFetcher] as OplogFetcher
-    }
-    
-    component "选举管理" as ElectionMgmt {
-        [ElectionManager] as ElectionMgr
-        [VoteRequester] as VoteReq
-        [FreshnessChecker] as FreshnessCheck
-    }
-    
-    ReplCoord --> ReplExecutor
-    ReplCoord --> TopoCoord
-    OplogMgr --> OplogApplier
-    OplogMgr --> OplogFetcher
-    ElectionMgr --> VoteReq
-    ElectionMgr --> FreshnessCheck
-    
-    note right of ReplCoord : 状态模式：复制集状态转换\n观察者模式：状态变更通知\n策略模式：选举策略选择
-}
+MONGOS_TL --> MONGOS_SEP
+MONGOS_SEP --> QR
+QR --> CRIT
+CRIT --> ST
+ST --> CCH
+CCH --> RES
+RES --> CCC
+CCC --> PM
 
-' ================================
-' 存储引擎层
-' ================================
-package "存储引擎层" as StorageLayer #LightSalmon {
-    interface "存储引擎接口" as StorageEngineInterface
-    interface "记录存储接口" as RecordStoreInterface
-    interface "排序数据接口" as SortedDataInterface
-    
-    component "WiredTiger引擎" as WTEngine {
-        [WiredTigerKVEngine] as WTKVEngine
-        [WiredTigerRecordStore] as WTRecordStore
-        [WiredTigerIndex] as WTIndex
-        [WiredTigerRecoveryUnit] as WTRecoveryUnit
-    }
-    
-    component "事务管理" as TransactionMgmt {
-        [TransactionCoordinator] as TxnCoord
-        [TransactionParticipant] as TxnParticipant
-        [PreparedTransactionsList] as PreparedTxns
-    }
-    
-    component "存储工厂" as StorageFactory {
-        [StorageEngineFactory] as EngineFactory
-        [RecordStoreFactory] as RecordFactory
-        [SortedDataInterfaceFactory] as IndexFactory
-    }
-    
-    StorageEngineInterface <|-- WTKVEngine
-    RecordStoreInterface <|-- WTRecordStore
-    SortedDataInterface <|-- WTIndex
-    
-    EngineFactory --> WTKVEngine
-    RecordFactory --> WTRecordStore
-    IndexFactory --> WTIndex
-    
-    TxnCoord --> TxnParticipant
-    TxnParticipant --> PreparedTxns
-    WTRecoveryUnit --> TxnParticipant
-    
-    note right of EngineFactory : 工厂模式：存储引擎创建\n策略模式：事务隔离级别\n模板方法模式：恢复单元处理
-}
+QR --> RTC
+CRIT --> SR
+ST --> DC
 
-' ================================
-' 网络传输层
-' ================================
-package "网络传输层" as TransportLayer #LightSeaGreen {
-    component "传输层抽象" as TransportAbstraction {
-        interface "TransportLayer" as TransportLayerInterface
-        [AsioTransportLayer] as AsioTransport
-        [Session] as NetworkSession
-        [Reactor] as NetworkReactor
-    }
-    
-    component "异步处理" as AsyncProcessing {
-        [AsioNetworkingBaton] as AsioBaton
-        [ThreadPool] as ThreadPoolMgr
-        [ServiceExecutor] as ServiceExec
-    }
-    
-    component "消息处理" as MessageProcessing {
-        [MessageCompressor] as MsgCompressor
-        [OpMsgRequest] as OpMsgReq
-        [OpMsgReply] as OpMsgReply
-        [ReplyBuilderInterface] as ReplyBuilder
-    }
-    
-    TransportLayerInterface <|-- AsioTransport
-    AsioTransport --> NetworkSession
-    NetworkSession --> NetworkReactor
-    
-    AsioBaton --> ThreadPoolMgr
-    ThreadPoolMgr --> ServiceExec
-    
-    MsgCompressor --> OpMsgReq
-    OpMsgReq --> OpMsgReply
-    OpMsgReply --> ReplyBuilder
-    
-    note right of AsioTransport : 策略模式：传输层实现选择\n观察者模式：网络事件处理\n线程池模式：并发请求处理
-}
+RTC --> CP
+SR --> CP
+DC --> CP
 
-' ================================
-' 基础设施层
-' ================================
-package "基础设施层" as InfrastructureLayer #Lavender {
-    component "服务上下文" as ServiceContext {
-        [ServiceContext] as SvcContext
-        [OperationContext] as OpContext
-        [Client] as ClientContext
-        [ClockSource] as Clock
-    }
-    
-    component "并发控制" as ConcurrencyControl {
-        [ThreadPool] as ThreadPool
-        [Mutex] as MutexMgr
-        [ConditionVariable] as CondVar
-        [ReadWriteLock] as RWLock
-    }
-    
-    component "监控度量" as Monitoring {
-        [ServerStatusMetric] as ServerStatus
-        [OperationProfiler] as Profiler
-        [CursorManager] as CursorMgr
-        [ConnectionPoolStats] as ConnStats
-    }
-    
-    SvcContext --> OpContext
-    OpContext --> ClientContext
-    SvcContext --> Clock
-    
-    ThreadPool --> MutexMgr
-    MutexMgr --> CondVar
-    CondVar --> RWLock
-    
-    ServerStatus --> Profiler
-    Profiler --> CursorMgr
-    CursorMgr --> ConnStats
-    
-    note right of SvcContext : 单例模式：全局服务上下文\n工厂模式：操作上下文创建\n观察者模式：性能指标收集
-}
+CP --> CS1
+CP --> CS2
+CS1 --> CP
+CS2 --> CP
 
-' ================================
-' 物理存储层
-' ================================
-package "物理存储层" as PhysicalStorage #LightGoldenRodYellow {
-    database "数据文件\n(.wt)" as DataFiles
-    database "索引文件\n(.wt)" as IndexFiles
-    database "事务日志\n(journal)" as JournalFiles
-    database "配置数据\n(config)" as ConfigFiles
-    database "Oplog集合\n(oplog.rs)" as OplogFiles
-}
+SCM --> CSO
+CSO --> SCC
+SCM --> SHARDS_DB
+SCM --> COLLECTIONS_DB
+SCM --> CHUNKS_DB
+SCM --> DATABASES_DB
+SCM --> SETTINGS_DB
 
-' ================================
-' 主要连接关系
-' ================================
+CCC --> S1P
+CCC --> S2P
+CCC --> SNP
 
-' 客户端到路由器
-LoadBalancer --> RouterEntry
+S1P --> S1S1
+S1P --> S1S2
+S2P --> S2S1
+S2P --> S2S2
+SNP --> SNS1
+SNP --> SNS2
 
-' 路由器到配置服务器
-QueryRouter --> CatalogMgr
-QueryRouter --> Balancer
+' mongod 内部连接
+TLM --> SM
+SM --> SEP
+SEP --> SC
+SC --> SVC
+SVC --> CLIENT
+CLIENT --> OPCTX
 
-' 路由器到数据服务器
-QueryRouter --> DataEntry
+OPCTX --> CR
+CR --> CMD
+CMD --> CI
 
-' 配置服务器内部连接
-CatalogMgr --> ConfigReplSet
-Balancer --> ConfigReplSet
+CI --> QP
+QP --> QPL
+QPL --> QE
+QE --> AF
+QPL --> PC
 
-' 数据服务器内部连接
-CommandSystem --> QueryEngine
-CommandSystem --> AggFramework
-QueryEngine --> StorageLayer
-AggFramework --> StorageLayer
+QE --> SEI
+SEI --> RS
+SEI --> IM
+SEI --> TM
 
-' 复制系统连接
-DataEntry --> ReplicationLayer
-ReplicationLayer --> StorageLayer
+OPCTX --> RC
+RC --> OM
+RC --> EM
+RC --> SS
 
-' 存储引擎连接
-StorageLayer --> TransportLayer
-StorageLayer --> InfrastructureLayer
+OPCTX --> SHARD_STATE
+SHARD_STATE --> CSR
+CSR --> MM
+MM --> BAL
 
-' 物理存储连接
-WTEngine --> DataFiles
-WTEngine --> IndexFiles
-WTEngine --> JournalFiles
-CatalogMgr --> ConfigFiles
-OplogMgmt --> OplogFiles
+' WiredTiger 连接
+SEI --> WTKE
+RS --> WTRS
+IM --> WTI
+TM --> WTRU
+WTKE --> WTC
+
+WTC --> WT_SM
+WTRU --> WT_TM
+WTRS --> WT_CM
+WTI --> WT_CP
+WT_CM --> WT_BT
+WT_CM --> WT_LSM
+
+WT_BT --> DF
+WT_BT --> IF
+WT_TM --> LF
+WT_CP --> MF
+
+' 性能优化连接
+QPL --> QO
+QO --> IO
+QO --> CE
+
+QE --> CEE
+QE --> SBE
+SBE --> VE
+SBE --> JIT
+
+AF --> PO
+PO --> SO
+PO --> GO
+
+WT_CM --> WTC_CACHE
+PC --> QC
+IM --> IC
+SCM --> MC
+
+note right of APP
+  客户端应用通过驱动程序
+  连接到 MongoDB 集群
+end note
+
+note right of QR
+  mongos 路由器负责:
+  - 查询路由
+  - 结果合并
+  - 负载均衡
+  - 故障转移
+end note
+
+note right of SCM
+  配置服务器管理:
+  - 分片元数据
+  - 块分布信息
+  - 集合分片配置
+  - 平衡器状态
+end note
+
+note right of WTKE
+  WiredTiger 特性:
+  - 文档级并发控制
+  - MVCC 多版本控制
+  - 数据压缩
+  - 事务支持
+  - 检查点恢复
+end note
+
+note right of QO
+  性能优化包括:
+  - 查询计划缓存
+  - 索引选择优化
+  - 聚合管道优化
+  - 并行执行
+  - 智能缓存
+end note
 
 @enduml
